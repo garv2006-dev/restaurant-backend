@@ -1,0 +1,600 @@
+const User = require('../models/User');
+const Room = require('../models/Room');
+const Booking = require('../models/Booking');
+const Payment = require('../models/Payment');
+const Review = require('../models/Review');
+const MenuItem = require('../models/MenuItem');
+
+// @desc    Get admin dashboard stats
+// @route   GET /api/admin/dashboard
+// @access  Private/Admin
+const getDashboardStats = async (req, res) => {
+    try {
+        const { period = 'month' } = req.query;
+        
+        // Calculate date range based on period
+        const now = new Date();
+        let startDate;
+        
+        switch (period) {
+            case 'week':
+                startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                break;
+            case 'month':
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                break;
+            case 'year':
+                startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+                break;
+            default:
+                startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        }
+
+        // Get overview stats
+        const totalUsers = await User.countDocuments({ role: 'customer' });
+        const totalRooms = await Room.countDocuments();
+        const totalBookings = await Booking.countDocuments();
+        const totalRevenue = await Payment.aggregate([
+            { $match: { status: 'Completed' } },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+
+        // Get period stats
+        const periodBookings = await Booking.countDocuments({
+            createdAt: { $gte: startDate }
+        });
+        
+        const periodRevenue = await Payment.aggregate([
+            { 
+                $match: { 
+                    status: 'Completed',
+                    createdAt: { $gte: startDate }
+                } 
+            },
+            { $group: { _id: null, total: { $sum: '$amount' } } }
+        ]);
+
+        const newUsers = await User.countDocuments({
+            role: 'customer',
+            createdAt: { $gte: startDate }
+        });
+
+        // Get booking status distribution
+        const bookingsByStatus = await Booking.aggregate([
+            {
+                $group: {
+                    _id: '$status',
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // Get room occupancy
+        const occupiedRooms = await Room.countDocuments({ status: 'Occupied' });
+        const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
+
+        // Get recent bookings
+        const recentBookings = await Booking.find()
+            .populate('user', 'name email')
+            .populate('room', 'name type roomNumber')
+            .sort({ createdAt: -1 })
+            .limit(10);
+
+        // Get pending reviews
+        const pendingReviews = await Review.countDocuments({ isApproved: false });
+
+        // Get revenue trend (last 7 days)
+        const revenueTrend = await Payment.aggregate([
+            {
+                $match: {
+                    status: 'Completed',
+                    createdAt: { $gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000) }
+                }
+            },
+            {
+                $group: {
+                    _id: {
+                        year: { $year: '$createdAt' },
+                        month: { $month: '$createdAt' },
+                        day: { $dayOfMonth: '$createdAt' }
+                    },
+                    revenue: { $sum: '$amount' },
+                    bookings: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                overview: {
+                    totalUsers,
+                    totalRooms,
+                    totalBookings,
+                    totalRevenue: totalRevenue.length > 0 ? totalRevenue[0].total : 0,
+                    occupancyRate: Math.round(occupancyRate)
+                },
+                period: {
+                    periodBookings,
+                    periodRevenue: periodRevenue.length > 0 ? periodRevenue[0].total : 0,
+                    newUsers
+                },
+                bookingsByStatus,
+                recentBookings,
+                pendingReviews,
+                revenueTrend
+            }
+        });
+
+    } catch (error) {
+        console.error('Get dashboard stats error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Get all bookings (Admin)
+// @route   GET /api/admin/bookings
+// @access  Private/Admin
+const getAllBookings = async (req, res) => {
+    try {
+        const {
+            status,
+            paymentStatus,
+            dateFrom,
+            dateTo,
+            search,
+            page = 1,
+            limit = 20
+        } = req.query;
+
+        let query = {};
+
+        if (status) query.status = status;
+        if (paymentStatus) query.paymentStatus = paymentStatus;
+
+        if (dateFrom || dateTo) {
+            query.createdAt = {};
+            if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+            if (dateTo) query.createdAt.$lte = new Date(dateTo);
+        }
+
+        if (search) {
+            query.$or = [
+                { bookingId: { $regex: search, $options: 'i' } },
+                { 'guestDetails.primaryGuest.name': { $regex: search, $options: 'i' } },
+                { 'guestDetails.primaryGuest.email': { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const bookings = await Booking.find(query)
+            .populate('user', 'name email phone')
+            .populate('room', 'name type roomNumber')
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .skip(skip);
+
+        const total = await Booking.countDocuments(query);
+
+        res.status(200).json({
+            success: true,
+            count: bookings.length,
+            total,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                pages: Math.ceil(total / limit)
+            },
+            data: bookings
+        });
+
+    } catch (error) {
+        console.error('Get all bookings error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Update booking status (Admin)
+// @route   PUT /api/admin/bookings/:id/status
+// @access  Private/Admin
+const updateBookingStatus = async (req, res) => {
+    try {
+        const { status } = req.body;
+
+        const booking = await Booking.findById(req.params.id);
+
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: 'Booking not found'
+            });
+        }
+
+        const oldStatus = booking.status;
+        booking.status = status;
+
+        // Update room status based on booking status
+        if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
+            await Room.findByIdAndUpdate(booking.room, { status: 'Occupied' });
+        } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
+            await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
+        } else if (status === 'Cancelled') {
+            await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
+        }
+
+        await booking.save();
+
+        res.status(200).json({
+            success: true,
+            data: booking
+        });
+
+    } catch (error) {
+        console.error('Update booking status error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Get revenue analytics
+// @route   GET /api/admin/analytics/revenue
+// @access  Private/Admin
+const getRevenueAnalytics = async (req, res) => {
+    try {
+        const { period = 'month', year = new Date().getFullYear() } = req.query;
+
+        let groupBy, startDate, endDate;
+
+        if (period === 'day') {
+            // Last 30 days
+            endDate = new Date();
+            startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+            groupBy = {
+                year: { $year: '$createdAt' },
+                month: { $month: '$createdAt' },
+                day: { $dayOfMonth: '$createdAt' }
+            };
+        } else if (period === 'month') {
+            // 12 months of specified year
+            startDate = new Date(year, 0, 1);
+            endDate = new Date(year, 11, 31);
+            groupBy = {
+                year: { $year: '$createdAt' },
+                month: { $month: '$createdAt' }
+            };
+        } else if (period === 'year') {
+            // Last 5 years
+            endDate = new Date();
+            startDate = new Date(endDate.getFullYear() - 4, 0, 1);
+            groupBy = {
+                year: { $year: '$createdAt' }
+            };
+        }
+
+        const revenueData = await Payment.aggregate([
+            {
+                $match: {
+                    status: 'Completed',
+                    createdAt: { $gte: startDate, $lte: endDate }
+                }
+            },
+            {
+                $group: {
+                    _id: groupBy,
+                    revenue: { $sum: '$amount' },
+                    bookings: { $sum: 1 }
+                }
+            },
+            { $sort: { '_id.year': 1, '_id.month': 1, '_id.day': 1 } }
+        ]);
+
+        // Get payment method distribution
+        const paymentMethods = await Payment.aggregate([
+            {
+                $match: {
+                    status: 'Completed',
+                    createdAt: { $gte: startDate, $lte: endDate }
+                }
+            },
+            {
+                $group: {
+                    _id: '$method',
+                    amount: { $sum: '$amount' },
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
+        // Get room type revenue
+        const roomTypeRevenue = await Booking.aggregate([
+            {
+                $match: {
+                    paymentStatus: 'Paid',
+                    createdAt: { $gte: startDate, $lte: endDate }
+                }
+            },
+            {
+                $lookup: {
+                    from: 'rooms',
+                    localField: 'room',
+                    foreignField: '_id',
+                    as: 'roomDetails'
+                }
+            },
+            { $unwind: '$roomDetails' },
+            {
+                $group: {
+                    _id: '$roomDetails.type',
+                    revenue: { $sum: '$pricing.totalAmount' },
+                    bookings: { $sum: 1 }
+                }
+            }
+        ]);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                revenueData,
+                paymentMethods,
+                roomTypeRevenue
+            }
+        });
+
+    } catch (error) {
+        console.error('Get revenue analytics error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Generate reports
+// @route   GET /api/admin/reports
+// @access  Private/Admin
+const generateReports = async (req, res) => {
+    try {
+        const { type, startDate, endDate } = req.query;
+
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+
+        let reportData = {};
+
+        switch (type) {
+            case 'booking':
+                reportData = await Booking.aggregate([
+                    {
+                        $match: {
+                            createdAt: { $gte: start, $lte: end }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: 'users',
+                            localField: 'user',
+                            foreignField: '_id',
+                            as: 'userDetails'
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: 'rooms',
+                            localField: 'room',
+                            foreignField: '_id',
+                            as: 'roomDetails'
+                        }
+                    },
+                    { $unwind: '$userDetails' },
+                    { $unwind: '$roomDetails' },
+                    {
+                        $project: {
+                            bookingId: 1,
+                            customerName: '$userDetails.name',
+                            customerEmail: '$userDetails.email',
+                            roomName: '$roomDetails.name',
+                            roomType: '$roomDetails.type',
+                            checkInDate: '$bookingDates.checkInDate',
+                            checkOutDate: '$bookingDates.checkOutDate',
+                            totalAmount: '$pricing.totalAmount',
+                            status: 1,
+                            paymentStatus: 1,
+                            createdAt: 1
+                        }
+                    }
+                ]);
+                break;
+
+            case 'revenue':
+                reportData = await Payment.aggregate([
+                    {
+                        $match: {
+                            status: 'Completed',
+                            createdAt: { $gte: start, $lte: end }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: 'bookings',
+                            localField: 'booking',
+                            foreignField: '_id',
+                            as: 'bookingDetails'
+                        }
+                    },
+                    { $unwind: '$bookingDetails' },
+                    {
+                        $group: {
+                            _id: {
+                                year: { $year: '$createdAt' },
+                                month: { $month: '$createdAt' }
+                            },
+                            totalRevenue: { $sum: '$amount' },
+                            bookingCount: { $sum: 1 }
+                        }
+                    }
+                ]);
+                break;
+
+            case 'customer':
+                reportData = await User.aggregate([
+                    {
+                        $match: {
+                            role: 'customer',
+                            createdAt: { $gte: start, $lte: end }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: 'bookings',
+                            localField: '_id',
+                            foreignField: 'user',
+                            as: 'bookings'
+                        }
+                    },
+                    {
+                        $project: {
+                            name: 1,
+                            email: 1,
+                            phone: 1,
+                            loyaltyPoints: 1,
+                            totalBookings: { $size: '$bookings' },
+                            createdAt: 1
+                        }
+                    }
+                ]);
+                break;
+
+            default:
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid report type'
+                });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                type,
+                period: { startDate: start, endDate: end },
+                records: reportData.length,
+                data: reportData
+            }
+        });
+
+    } catch (error) {
+        console.error('Generate reports error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Get system settings
+// @route   GET /api/admin/settings
+// @access  Private/Admin
+const getSystemSettings = async (req, res) => {
+    try {
+        // This would typically come from a settings collection
+        // For now, returning default settings
+        const settings = {
+            general: {
+                siteName: 'Restaurant Booking System',
+                siteUrl: process.env.FRONTEND_URL,
+                contactEmail: 'admin@restaurant-booking.com',
+                timezone: 'UTC'
+            },
+            booking: {
+                maxAdvanceBookingDays: 365,
+                cancellationPolicy: 'flexible',
+                checkInTime: '15:00',
+                checkOutTime: '11:00'
+            },
+            payment: {
+                currency: 'USD',
+                taxRate: 18,
+                paymentMethods: ['stripe', 'razorpay']
+            },
+            notifications: {
+                emailNotifications: true,
+                smsNotifications: false,
+                bookingConfirmation: true,
+                paymentConfirmation: true
+            }
+        };
+
+        res.status(200).json({
+            success: true,
+            data: settings
+        });
+
+    } catch (error) {
+        console.error('Get system settings error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Create staff user
+// @route   POST /api/admin/staff
+// @access  Private/Admin
+const createStaffUser = async (req, res) => {
+    try {
+        const { name, email, phone, password, role = 'staff' } = req.body;
+
+        // Check if user already exists
+        const existingUser = await User.findOne({
+            $or: [{ email }, { phone }]
+        });
+
+        if (existingUser) {
+            return res.status(400).json({
+                success: false,
+                message: 'User with this email or phone already exists'
+            });
+        }
+
+        const user = await User.create({
+            name,
+            email,
+            phone,
+            password,
+            role,
+            isEmailVerified: true // Staff accounts are pre-verified
+        });
+
+        res.status(201).json({
+            success: true,
+            data: user
+        });
+
+    } catch (error) {
+        console.error('Create staff user error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+module.exports = {
+    getDashboardStats,
+    getAllBookings,
+    updateBookingStatus,
+    getRevenueAnalytics,
+    generateReports,
+    getSystemSettings,
+    createStaffUser
+};
