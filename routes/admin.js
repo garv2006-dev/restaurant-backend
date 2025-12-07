@@ -8,7 +8,10 @@ const { protect, authorize } = require('../middleware/auth');
 const {
     getDashboardStats,
     getAllBookings,
+    getAllOrders,
+    getAllUsers,
     updateBookingStatus,
+    updateUserStatus,
     getRevenueAnalytics,
     generateReports,
     getSystemSettings,
@@ -32,6 +35,13 @@ router.get('/analytics/revenue', getRevenueAnalytics);
 // Booking management
 router.get('/bookings', getAllBookings);
 router.put('/bookings/:id/status', updateBookingStatus);
+
+// Order management
+router.get('/orders', getAllOrders);
+
+// User management
+router.get('/users', getAllUsers);
+router.put('/users/:id/status', updateUserStatus);
 
 // Reports
 router.get('/reports', getAnalyticsReport);

@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
+const { initializeSocket } = require('./config/socket');
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -20,11 +21,13 @@ const roomRoutes = require('./routes/rooms');
 const bookingRoutes = require('./routes/bookings');
 const menuRoutes = require('./routes/menu');
 const paymentRoutes = require('./routes/payments');
+const orderRoutes = require('./routes/orders');
 const reviewRoutes = require('./routes/reviews');
 const adminRoutes = require('./routes/admin');
 const loyaltyRoutes = require('./routes/loyalty');
 const discountRoutes = require('./routes/discounts');
-// const uploadRoutes = require('./routes/upload');
+const uploadRoutes = require('./routes/upload');
+const customerRoutes = require('./routes/customerRoutes');
 
 const app = express();
 
@@ -77,13 +80,16 @@ const isDev = (process.env.NODE_ENV || 'development') === 'development';
 
 // Rate limiting - more specific for auth routes
 const authLimiter = rateLimit({
-    max: 5, // limit each IP to 5 auth requests per windowMs
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: isDev ? 50 : 5, // development: 50 req/15min, production: 5 req/15min per IP
     message: {
         success: false,
         message: 'Too many authentication attempts, please try again later.'
     },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    // Skip applying the limiter entirely in development
+    skip: () => isDev && process.env.SKIP_AUTH_RATE_LIMIT === 'true'
 });
 
 const generalLimiter = rateLimit({
@@ -138,11 +144,13 @@ app.use('/api/rooms', roomRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/menu', menuRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/orders', orderRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/discounts', discountRoutes);
-// app.use('/api/upload', uploadRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/customers', customerRoutes);
 
 // 404 handler
 app.use((req, res, next) => {

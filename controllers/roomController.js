@@ -183,7 +183,43 @@ const checkAvailability = async (req, res) => {
 // @access  Private/Admin
 const createRoom = async (req, res) => {
     try {
-        const room = await Room.create(req.body);
+        const body = { ...req.body };
+
+        // Parse JSON-encoded nested fields when coming from multipart/form-data
+        const parseIfJson = (value) => {
+            if (typeof value === 'string') {
+                try {
+                    return JSON.parse(value);
+                } catch (e) {
+                    return value;
+                }
+            }
+            return value;
+        };
+
+        body.capacity = parseIfJson(body.capacity);
+        body.price = parseIfJson(body.price);
+        body.features = parseIfJson(body.features);
+
+        // Map uploaded files (if any) to images array
+        if (req.files && req.files.length > 0) {
+            body.images = req.files.map((file, index) => ({
+                url: `/uploads/rooms/${file.filename}`,
+                altText: `${body.name || 'Room'} - Image ${index + 1}`,
+                isPrimary: index === 0
+            }));
+        }
+
+        // If no images were uploaded, ensure there is at least one placeholder image
+        if (!body.images || body.images.length === 0) {
+            body.images = [{
+                url: 'https://via.placeholder.com/400x250?text=Room+Image',
+                altText: `${body.name || 'Room'} - Image`,
+                isPrimary: true
+            }];
+        }
+
+        const room = await Room.create(body);
 
         res.status(201).json({
             success: true,

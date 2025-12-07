@@ -169,10 +169,10 @@ const confirmPayment = async (req, res) => {
             booking: bookingId,
             user: booking.user._id,
             amount: amount,
-            method: paymentDetails.method,
+            paymentMethod: paymentDetails.method,
             transactionId: paymentDetails.transactionId,
-            status: 'Completed',
-            gateway: paymentMethod
+            gateway: paymentMethod,
+            status: 'Completed'
         });
 
         // Update booking
@@ -487,11 +487,137 @@ const generateInvoice = async (req, res) => {
     }
 };
 
+// @desc    Create payment record (for cash/online payments)
+// @route   POST /api/payments/create
+// @access  Private
+const createPayment = async (req, res) => {
+    try {
+        const { bookingId, paymentMethod, amount } = req.body;
+
+        // Find booking
+        const booking = await Booking.findById(bookingId).populate('user room');
+
+        if (!booking) {
+            return res.status(404).json({
+                success: false,
+                message: 'Booking not found'
+            });
+        }
+
+        // Check if user owns this booking or is admin
+        if (booking.user._id.toString() !== req.user.id && req.user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Not authorized to create payment for this booking'
+            });
+        }
+
+        // Check if payment already exists
+        const existingPayment = await Payment.findOne({ booking: bookingId });
+        if (existingPayment) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment already exists for this booking'
+            });
+        }
+
+        // Create payment record
+        const paymentData = {
+            booking: bookingId,
+            user: booking.user._id,
+            amount: amount || booking.pricing.totalAmount,
+            paymentMethod: paymentMethod,
+            gateway: paymentMethod === 'Cash' ? 'Manual' : 'Manual',
+            status: paymentMethod === 'Cash' ? 'Pending' : 'Completed'
+        };
+
+        // Add transaction ID for online payments
+        if (paymentMethod !== 'Cash') {
+            paymentData.transactionId = `TXN${Date.now()}`;
+        }
+
+        const payment = await Payment.create(paymentData);
+
+        // Update booking status based on payment method
+        if (paymentMethod === 'Cash') {
+            booking.paymentStatus = 'Pending';
+        } else {
+            booking.paymentStatus = 'Paid';
+            booking.status = 'Confirmed';
+        }
+        
+        booking.paymentDetails = {
+            method: paymentMethod,
+            paidAmount: amount,
+            paymentDate: new Date()
+        };
+        await booking.save();
+
+        res.status(201).json({
+            success: true,
+            data: payment
+        });
+
+    } catch (error) {
+        console.error('Create payment error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Get all payments (Admin only)
+// @route   GET /api/payments/admin/all
+// @access  Private/Admin
+const getAllPayments = async (req, res) => {
+    try {
+        const { page = 1, limit = 10, status, paymentMethod } = req.query;
+        const skip = (page - 1) * limit;
+
+        // Build query
+        let query = {};
+        if (status) query.status = status;
+        if (paymentMethod) query.paymentMethod = paymentMethod;
+
+        const payments = await Payment.find(query)
+            .populate('booking', 'bookingId room pricing.totalAmount')
+            .populate('booking.room', 'name type')
+            .populate('user', 'name email')
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .skip(skip);
+
+        const total = await Payment.countDocuments(query);
+
+        res.status(200).json({
+            success: true,
+            count: payments.length,
+            total,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                pages: Math.ceil(total / limit)
+            },
+            data: payments
+        });
+
+    } catch (error) {
+        console.error('Get all payments error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
 module.exports = {
     createPaymentIntent,
     confirmPayment,
+    createPayment,
     getPayments,
     getPayment,
+    getAllPayments,
     processRefund,
     generateInvoice
 };

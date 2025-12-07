@@ -1,8 +1,10 @@
 const Booking = require('../models/Booking');
 const Room = require('../models/Room');
 const User = require('../models/User');
+const Payment = require('../models/Payment');
 const sendEmail = require('../utils/sendEmail');
 const { awardPointsForBooking } = require('./loyaltyController');
+const { emitNewBooking, emitBookingStatusChange, emitUserNotification } = require('../config/socket');
 
 // @desc    Create booking
 // @route   POST /api/bookings
@@ -17,7 +19,8 @@ const createBooking = async (req, res) => {
             specialRequests,
             preferences,
             extraServices,
-            menuItems
+            menuItems,
+            paymentDetails
         } = req.body;
 
         // Find room
@@ -84,8 +87,39 @@ const createBooking = async (req, res) => {
                 totalAmount
             },
             specialRequests,
-            preferences: preferences || {}
+            preferences: preferences || {},
+            paymentDetails: paymentDetails || {}
         });
+
+        // Create payment record automatically
+        let payment = null;
+        try {
+            const paymentMethod = paymentDetails?.method || 'Cash';
+            const paymentData = {
+                booking: booking._id,
+                user: req.user.id,
+                amount: totalAmount,
+                paymentMethod: paymentMethod,
+                gateway: paymentMethod === 'Cash' ? 'Manual' : 'Manual',
+                status: paymentMethod === 'Cash' ? 'Pending' : 'Completed'
+            };
+
+            // Add transaction ID for online payments
+            if (paymentMethod !== 'Cash') {
+                paymentData.transactionId = `TXN${Date.now()}`;
+            }
+
+            payment = await Payment.create(paymentData);
+
+            // Update booking payment status
+            booking.paymentStatus = paymentMethod === 'Cash' ? 'Pending' : 'Paid';
+            booking.status = paymentMethod === 'Cash' ? 'Pending' : 'Confirmed';
+            await booking.save();
+
+        } catch (paymentError) {
+            console.error('Payment creation error:', paymentError);
+            // Continue even if payment creation fails
+        }
 
         // Populate booking details
         await booking.populate([
@@ -121,6 +155,31 @@ const createBooking = async (req, res) => {
             });
         } catch (emailError) {
             console.error('Email sending error:', emailError);
+        }
+
+        // Emit real-time notifications
+        try {
+            // Emit new booking to admin dashboard
+            emitNewBooking({
+                bookingId: booking.bookingId,
+                customerName: guestDetails.primaryGuest.name,
+                roomName: booking.room.name,
+                checkInDate: checkIn,
+                checkOutDate: checkOut,
+                totalAmount,
+                status: booking.status,
+                paymentStatus: booking.paymentStatus
+            });
+
+            // Send notification to user
+            emitUserNotification(req.user.id, {
+                title: 'Booking Confirmed!',
+                message: `Your booking ${booking.bookingId} has been confirmed for ${booking.room.name}`,
+                type: 'success',
+                bookingId: booking.bookingId
+            });
+        } catch (socketError) {
+            console.error('Socket notification error:', socketError);
         }
 
         res.status(201).json({
@@ -377,6 +436,20 @@ const cancelBooking = async (req, res) => {
             });
         } catch (emailError) {
             console.error('Email sending error:', emailError);
+        }
+
+        // Emit booking status change notification
+        try {
+            emitBookingStatusChange(booking.bookingId, 'Cancelled', booking.user.toString());
+            
+            emitUserNotification(booking.user.toString(), {
+                title: 'Booking Cancelled',
+                message: `Your booking ${booking.bookingId} has been cancelled`,
+                type: 'warning',
+                bookingId: booking.bookingId
+            });
+        } catch (socketError) {
+            console.error('Socket notification error:', socketError);
         }
 
         res.status(200).json({

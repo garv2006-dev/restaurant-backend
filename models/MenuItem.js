@@ -25,7 +25,8 @@ const MenuItemSchema = new mongoose.Schema({
             'Dinner',
             'Snacks',
             'Alcoholic Beverages',
-            'Non-Alcoholic Beverages'
+            'Non-Alcoholic Beverages',
+            'Specials'
         ]
     },
     subcategory: {

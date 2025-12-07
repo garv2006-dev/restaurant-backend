@@ -3,6 +3,7 @@ const router = express.Router();
 
 // Middleware
 const { protect, authorize } = require('../middleware/auth');
+const { uploadRoom } = require('../middleware/upload');
 
 // Controllers
 const {
@@ -22,7 +23,7 @@ router.get('/:id', getRoom);
 router.post('/:id/availability', checkAvailability);
 
 // Admin routes
-router.post('/', protect, authorize('admin'), createRoom);
+router.post('/', protect, authorize('admin'), uploadRoom.array('images', 5), createRoom);
 router.put('/:id', protect, authorize('admin'), updateRoom);
 router.delete('/:id', protect, authorize('admin'), deleteRoom);
 

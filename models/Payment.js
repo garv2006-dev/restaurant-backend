@@ -4,12 +4,21 @@ const PaymentSchema = new mongoose.Schema({
     paymentId: {
         type: String,
         unique: true,
-        required: true
+        required: false // Will be auto-generated in pre-save hook
     },
     booking: {
         type: mongoose.Schema.ObjectId,
         ref: 'Booking',
-        required: [true, 'Payment must be associated with a booking']
+        required: function() {
+            return !this.order; // Either booking or order is required
+        }
+    },
+    order: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'Order',
+        required: function() {
+            return !this.booking; // Either booking or order is required
+        }
     },
     user: {
         type: mongoose.Schema.ObjectId,
@@ -30,7 +39,11 @@ const PaymentSchema = new mongoose.Schema({
     paymentMethod: {
         type: String,
         required: true,
-        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer']
+        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer', 'Card', 'Online']
+    },
+    method: {
+        type: String,
+        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer', 'Card', 'Online']
     },
     paymentGateway: {
         type: String,
@@ -42,9 +55,14 @@ const PaymentSchema = new mongoose.Schema({
             return this.paymentGateway !== 'Manual';
         }
     },
+    transactionId: String, // Alias for gatewayTransactionId
     gatewayOrderId: String,
     gatewayPaymentId: String,
     gatewaySignature: String,
+    gateway: {
+        type: String,
+        enum: ['Stripe', 'Razorpay', 'PayPal', 'Manual', 'Cash', 'Card', 'Online']
+    },
     status: {
         type: String,
         enum: ['Pending', 'Processing', 'Completed', 'Failed', 'Cancelled', 'Refunded', 'PartiallyRefunded'],
@@ -167,6 +185,7 @@ const PaymentSchema = new mongoose.Schema({
 // Indexes
 PaymentSchema.index({ paymentId: 1 });
 PaymentSchema.index({ booking: 1 });
+PaymentSchema.index({ order: 1 });
 PaymentSchema.index({ user: 1 });
 PaymentSchema.index({ status: 1 });
 PaymentSchema.index({ paymentDate: -1 });
