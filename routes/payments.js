@@ -8,8 +8,10 @@ const { protect, authorize } = require('../middleware/auth');
 const {
     createPaymentIntent,
     confirmPayment,
+    createPayment,
     getPayments,
     getPayment,
+    getAllPayments,
     processRefund,
     generateInvoice
 } = require('../controllers/paymentController');
@@ -20,11 +22,13 @@ router.use(protect);
 // Customer routes
 router.post('/create-intent', createPaymentIntent);
 router.post('/confirm', confirmPayment);
+router.post('/create', createPayment);
 router.get('/', getPayments);
 router.get('/:id', getPayment);
 router.get('/:id/invoice', generateInvoice);
 
 // Admin routes
+router.get('/admin/all', authorize('admin'), getAllPayments);
 router.post('/:id/refund', authorize('admin'), processRefund);
 
 module.exports = router;

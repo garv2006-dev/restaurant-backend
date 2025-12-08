@@ -4,6 +4,7 @@ const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const Review = require('../models/Review');
 const MenuItem = require('../models/MenuItem');
+const Order = require('../models/Order');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -34,6 +35,7 @@ const getDashboardStats = async (req, res) => {
         const totalUsers = await User.countDocuments({ role: 'customer' });
         const totalRooms = await Room.countDocuments();
         const totalBookings = await Booking.countDocuments();
+        const totalOrders = await Order.countDocuments();
         const totalRevenue = await Payment.aggregate([
             { $match: { status: 'Completed' } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -41,6 +43,10 @@ const getDashboardStats = async (req, res) => {
 
         // Get period stats
         const periodBookings = await Booking.countDocuments({
+            createdAt: { $gte: startDate }
+        });
+
+        const periodOrders = await Order.countDocuments({
             createdAt: { $gte: startDate }
         });
         
@@ -69,6 +75,16 @@ const getDashboardStats = async (req, res) => {
             }
         ]);
 
+        // Get order status distribution
+        const ordersByStatus = await Order.aggregate([
+            {
+                $group: {
+                    _id: '$status',
+                    count: { $sum: 1 }
+                }
+            }
+        ]);
+
         // Get room occupancy
         const occupiedRooms = await Room.countDocuments({ status: 'Occupied' });
         const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
@@ -77,6 +93,12 @@ const getDashboardStats = async (req, res) => {
         const recentBookings = await Booking.find()
             .populate('user', 'name email')
             .populate('room', 'name type roomNumber')
+            .sort({ createdAt: -1 })
+            .limit(10);
+
+        // Get recent orders
+        const recentOrders = await Order.find()
+            .populate('user', 'name email')
             .sort({ createdAt: -1 })
             .limit(10);
 
@@ -112,16 +134,20 @@ const getDashboardStats = async (req, res) => {
                     totalUsers,
                     totalRooms,
                     totalBookings,
+                    totalOrders,
                     totalRevenue: totalRevenue.length > 0 ? totalRevenue[0].total : 0,
                     occupancyRate: Math.round(occupancyRate)
                 },
                 period: {
                     periodBookings,
+                    periodOrders,
                     periodRevenue: periodRevenue.length > 0 ? periodRevenue[0].total : 0,
                     newUsers
                 },
                 bookingsByStatus,
+                ordersByStatus,
                 recentBookings,
+                recentOrders,
                 pendingReviews,
                 revenueTrend
             }
@@ -239,6 +265,172 @@ const updateBookingStatus = async (req, res) => {
 
     } catch (error) {
         console.error('Update booking status error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Get all orders (Admin)
+// @route   GET /api/admin/orders
+// @access  Private/Admin
+const getAllOrders = async (req, res) => {
+    try {
+        const {
+            status,
+            paymentMethod,
+            dateFrom,
+            dateTo,
+            search,
+            page = 1,
+            limit = 20
+        } = req.query;
+
+        let query = {};
+
+        if (status) query.status = status;
+        if (paymentMethod) query.paymentMethod = paymentMethod;
+
+        if (dateFrom || dateTo) {
+            query.createdAt = {};
+            if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
+            if (dateTo) query.createdAt.$lte = new Date(dateTo);
+        }
+
+        if (search) {
+            query.$or = [
+                { orderNumber: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const orders = await Order.find(query)
+            .populate('user', 'name email phone')
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .skip(skip);
+
+        const total = await Order.countDocuments(query);
+
+        res.status(200).json({
+            success: true,
+            count: orders.length,
+            total,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                pages: Math.ceil(total / limit)
+            },
+            data: orders
+        });
+
+    } catch (error) {
+        console.error('Get all orders error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Get all users (Admin)
+// @route   GET /api/admin/users
+// @access  Private/Admin
+const getAllUsers = async (req, res) => {
+    try {
+        const {
+            role,
+            status,
+            search,
+            page = 1,
+            limit = 20
+        } = req.query;
+
+        let query = {};
+
+        if (role) query.role = role;
+        if (status) {
+            if (status === 'verified') {
+                query.isEmailVerified = true;
+            } else if (status === 'unverified') {
+                query.isEmailVerified = false;
+            }
+        }
+
+        if (search) {
+            query.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { phone: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const users = await User.find(query)
+            .select('-password')
+            .sort({ createdAt: -1 })
+            .limit(Number(limit))
+            .skip(skip);
+
+        const total = await User.countDocuments(query);
+
+        res.status(200).json({
+            success: true,
+            count: users.length,
+            total,
+            pagination: {
+                page: Number(page),
+                limit: Number(limit),
+                pages: Math.ceil(total / limit)
+            },
+            data: users
+        });
+
+    } catch (error) {
+        console.error('Get all users error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
+// @desc    Update user status (Admin)
+// @route   PUT /api/admin/users/:id/status
+// @access  Private/Admin
+const updateUserStatus = async (req, res) => {
+    try {
+        const { isEmailVerified, role } = req.body;
+
+        const user = await User.findById(req.params.id);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found'
+            });
+        }
+
+        if (isEmailVerified !== undefined) {
+            user.isEmailVerified = isEmailVerified;
+        }
+
+        if (role !== undefined) {
+            user.role = role;
+        }
+
+        await user.save();
+
+        res.status(200).json({
+            success: true,
+            data: user
+        });
+
+    } catch (error) {
+        console.error('Update user status error:', error);
         res.status(500).json({
             success: false,
             message: 'Server Error'
@@ -592,7 +784,10 @@ const createStaffUser = async (req, res) => {
 module.exports = {
     getDashboardStats,
     getAllBookings,
+    getAllOrders,
+    getAllUsers,
     updateBookingStatus,
+    updateUserStatus,
     getRevenueAnalytics,
     generateReports,
     getSystemSettings,

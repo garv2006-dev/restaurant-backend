@@ -47,13 +47,14 @@ const avatarStorage = multer.diskStorage({
   }
 });
 
-// File filter function
+// File filter function - allow only jpg, jpeg, png
 const fileFilter = (req, file, cb) => {
-  // Check if file is an image
-  if (file.mimetype.startsWith('image/')) {
+  const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+
+  if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Not an image! Please upload only images.'), false);
+    cb(new Error('Invalid file type. Only JPG, JPEG, and PNG images are allowed.'), false);
   }
 };
 

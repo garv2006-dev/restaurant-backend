@@ -14,10 +14,15 @@ const getMenuItems = async (req, res) => {
             search,
             sort,
             page = 1,
-            limit = 20
+            limit = 20,
         } = req.query;
 
-        let query = { isAvailable: true };
+        // Base query should match schema fields
+        // Only return items that are marked active and available
+        const query = {
+            isActive: true,
+            'availability.isAvailable': true,
+        };
 
         // Filter by category
         if (category) {
@@ -31,12 +36,12 @@ const getMenuItems = async (req, res) => {
             if (maxPrice) query.price.$lte = Number(maxPrice);
         }
 
-        // Filter by dietary preferences
+        // Filter by dietary preferences (nested fields in schema)
         if (isVegetarian === 'true') {
-            query.isVegetarian = true;
+            query['dietaryInfo.isVegetarian'] = true;
         }
         if (isVegan === 'true') {
-            query.isVegan = true;
+            query['dietaryInfo.isVegan'] = true;
         }
 
         // Search functionality
@@ -44,7 +49,13 @@ const getMenuItems = async (req, res) => {
             query.$or = [
                 { name: { $regex: search, $options: 'i' } },
                 { description: { $regex: search, $options: 'i' } },
-                { ingredients: { $elemMatch: { $regex: search, $options: 'i' } } }
+                {
+                    ingredients: {
+                        $elemMatch: {
+                            name: { $regex: search, $options: 'i' },
+                        },
+                    },
+                },
             ];
         }
 
@@ -59,10 +70,10 @@ const getMenuItems = async (req, res) => {
                     sortOptions = { price: -1 };
                     break;
                 case 'rating':
-                    sortOptions = { averageRating: -1 };
+                    sortOptions = { 'popularity.averageRating': -1 };
                     break;
                 case 'popular':
-                    sortOptions = { orderCount: -1 };
+                    sortOptions = { 'popularity.orderCount': -1 };
                     break;
                 default:
                     sortOptions = { name: 1 };
@@ -72,32 +83,34 @@ const getMenuItems = async (req, res) => {
         }
 
         // Pagination
-        const skip = (page - 1) * limit;
+        const numericPage = Number(page) || 1;
+        const numericLimit = Number(limit) || 20;
+        const skip = (numericPage - 1) * numericLimit;
 
         const menuItems = await MenuItem.find(query)
             .sort(sortOptions)
-            .limit(Number(limit))
+            .limit(numericLimit)
             .skip(skip);
 
         const total = await MenuItem.countDocuments(query);
 
+        // Response shape expected by frontend: { success: true, items: [...] }
         res.status(200).json({
             success: true,
+            items: menuItems,
             count: menuItems.length,
             total,
             pagination: {
-                page: Number(page),
-                limit: Number(limit),
-                pages: Math.ceil(total / limit)
+                page: numericPage,
+                limit: numericLimit,
+                pages: Math.ceil(total / numericLimit) || 1,
             },
-            data: menuItems
         });
-
     } catch (error) {
         console.error('Get menu items error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server Error'
+            message: 'Server Error',
         });
     }
 };
@@ -156,18 +169,151 @@ const getMenuCategories = async (req, res) => {
 // @access  Private/Admin
 const createMenuItem = async (req, res) => {
     try {
-        const menuItem = await MenuItem.create(req.body);
+        const {
+            itemName,
+            name,
+            category,
+            price,
+            preparationTime,
+            servingSize,
+            imageUrl,
+            description,
+            ingredients,
+            allergens,
+            tags,
+            dietaryInfo,
+            availability,
+            images,
+        } = req.body;
+
+        const payload = {};
+
+        // Basic fields (support both itemName and name)
+        payload.name = name || itemName;
+        payload.category = category;
+        payload.price = price;
+        payload.preparationTime = preparationTime;
+        payload.servingSize = servingSize;
+        payload.description = description;
+
+        // Ingredients: accept comma-separated or array
+        if (Array.isArray(ingredients)) {
+            payload.ingredients = ingredients.map((ing) =>
+                typeof ing === 'string' ? { name: ing } : ing
+            );
+        } else if (typeof ingredients === 'string') {
+            payload.ingredients = ingredients
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean)
+                .map((name) => ({ name }));
+        }
+
+        // Allergens: accept comma-separated or array
+        if (Array.isArray(allergens)) {
+            payload.allergens = allergens;
+        } else if (typeof allergens === 'string') {
+            payload.allergens = allergens
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean);
+        }
+
+        // Dietary & availability tags: accept tags object or nested dietaryInfo/availability
+        const mergedDietary = {
+            isVegetarian: false,
+            isVegan: false,
+            isGlutenFree: false,
+            isDairyFree: false,
+            isKeto: false,
+            isSpicy: false,
+            ...(dietaryInfo || {}),
+        };
+
+        const mergedAvailability = {
+            isAvailable: true,
+            ...(availability || {}),
+        };
+
+        if (tags && typeof tags === 'object') {
+            if (typeof tags.vegetarian === 'boolean') mergedDietary.isVegetarian = tags.vegetarian;
+            if (typeof tags.vegan === 'boolean') mergedDietary.isVegan = tags.vegan;
+            if (typeof tags.glutenFree === 'boolean') mergedDietary.isGlutenFree = tags.glutenFree;
+            if (typeof tags.dairyFree === 'boolean') mergedDietary.isDairyFree = tags.dairyFree;
+            if (typeof tags.spicy === 'boolean') mergedDietary.isSpicy = tags.spicy;
+            if (typeof tags.available === 'boolean') mergedAvailability.isAvailable = tags.available;
+        }
+
+        payload.dietaryInfo = mergedDietary;
+        payload.availability = {
+            ...mergedAvailability,
+        };
+
+        // Images: support either imageUrl string or images array
+        if (Array.isArray(images) && images.length > 0) {
+            payload.images = images.map((img, index) => ({
+                url: img.url || img,
+                altText: img.altText || payload.name,
+                isPrimary: index === 0,
+            }));
+        } else if (typeof imageUrl === 'string' && imageUrl.trim()) {
+            payload.images = [{
+                url: imageUrl.trim(),
+                altText: payload.name,
+                isPrimary: true,
+            }];
+        } else if (req.body.images && Array.isArray(req.body.images) && req.body.images.length > 0) {
+            payload.images = req.body.images;
+        }
+
+        // Fallback to request body for any additional optional fields
+        const extraFields = ['subcategory', 'discountPrice', 'cuisine', 'nutritionalInfo', 'tags', 'isSignatureDish', 'isFeatured'];
+        extraFields.forEach((field) => {
+            if (req.body[field] !== undefined) {
+                payload[field] = req.body[field];
+            }
+        });
+
+        // Validate core required fields before hitting Mongoose.
+        // Images are optional here; schema already enforces url on individual image docs.
+        const missing = [];
+        if (!payload.name) missing.push('name');
+        if (!payload.category) missing.push('category');
+        if (payload.price === undefined) missing.push('price');
+        if (payload.preparationTime === undefined) missing.push('preparationTime');
+        if (!payload.servingSize) missing.push('servingSize');
+        if (!payload.description) missing.push('description');
+
+        if (missing.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Missing required fields: ${missing.join(', ')}`,
+            });
+        }
+
+        const menuItem = await MenuItem.create(payload);
 
         res.status(201).json({
             success: true,
-            data: menuItem
+            message: 'Menu item added',
+            item: menuItem,
         });
 
     } catch (error) {
         console.error('Create menu item error:', error);
+
+        // Mongoose validation error
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map((e) => e.message);
+            return res.status(400).json({
+                success: false,
+                message: messages.join(', '),
+            });
+        }
+
         res.status(500).json({
             success: false,
-            message: 'Server Error'
+            message: 'Server Error',
         });
     }
 };

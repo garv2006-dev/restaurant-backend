@@ -22,13 +22,18 @@ const UserSchema = new mongoose.Schema({
     },
     phone: {
         type: String,
-        required: [true, 'Please add a phone number'],
+        required: function() {
+            return this.authProvider === 'local';
+        },
         unique: true,
+        sparse: true,
         match: [/^[\+]?[1-9][\d]{0,15}$/, 'Please add a valid phone number']
     },
     password: {
         type: String,
-        required: [true, 'Please add a password'],
+        required: function() {
+            return this.authProvider === 'local';
+        },
         minlength: 6,
         select: false
     },
@@ -110,7 +115,19 @@ const UserSchema = new mongoose.Schema({
     resetPasswordToken: String,
     resetPasswordExpire: Date,
     emailVerificationToken: String,
-    emailVerificationExpire: Date
+    emailVerificationExpire: Date,
+    // Social authentication fields
+    authProvider: {
+        type: String,
+        enum: ['local', 'google', 'facebook'],
+        default: 'local'
+    },
+    firebaseUid: {
+        type: String,
+        sparse: true,
+        unique: true
+    },
+    photoURL: String
 }, {
     timestamps: true
 });
@@ -119,6 +136,7 @@ const UserSchema = new mongoose.Schema({
 UserSchema.index({ email: 1 });
 UserSchema.index({ phone: 1 });
 UserSchema.index({ role: 1 });
+UserSchema.index({ firebaseUid: 1 });
 
 // Encrypt password using bcrypt
 UserSchema.pre('save', async function(next) {

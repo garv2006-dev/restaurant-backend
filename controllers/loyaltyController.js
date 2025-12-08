@@ -6,7 +6,9 @@ const LoyaltyProgram = require('../models/LoyaltyProgram');
 // @access  Public
 const getLoyaltyProgram = async (req, res) => {
   try {
-    const program = await LoyaltyProgram.findOne({ isActive: true });
+    const program = await LoyaltyProgram.findOne({ isActive: true })
+      .populate('rewards')
+      .populate('tiers');
     
     if (!program) {
       return res.status(404).json({
@@ -24,6 +26,148 @@ const getLoyaltyProgram = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while fetching loyalty program'
+    });
+  }
+};
+
+// @desc    Get all loyalty programs (admin)
+// @route   GET /api/loyalty/programs
+// @access  Private/Admin
+const getLoyaltyPrograms = async (req, res) => {
+  try {
+    const programs = await LoyaltyProgram.find({})
+      .populate('rewards')
+      .populate('tiers')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      data: programs
+    });
+  } catch (error) {
+    console.error('Error fetching loyalty programs:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching loyalty programs'
+    });
+  }
+};
+
+// @desc    Create loyalty program (admin)
+// @route   POST /api/loyalty/programs
+// @access  Private/Admin
+const createLoyaltyProgram = async (req, res) => {
+  try {
+    const program = await LoyaltyProgram.create(req.body);
+
+    const populatedProgram = await LoyaltyProgram.findById(program._id)
+      .populate('rewards')
+      .populate('tiers');
+
+    res.status(201).json({
+      success: true,
+      data: populatedProgram
+    });
+  } catch (error) {
+    console.error('Error creating loyalty program:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while creating loyalty program'
+    });
+  }
+};
+
+// @desc    Update loyalty program (admin)
+// @route   PUT /api/loyalty/programs/:id
+// @access  Private/Admin
+const updateLoyaltyProgram = async (req, res) => {
+  try {
+    let program = await LoyaltyProgram.findById(req.params.id);
+
+    if (!program) {
+      return res.status(404).json({
+        success: false,
+        message: 'Loyalty program not found'
+      });
+    }
+
+    program = await LoyaltyProgram.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true
+    }).populate('rewards').populate('tiers');
+
+    res.status(200).json({
+      success: true,
+      data: program
+    });
+  } catch (error) {
+    console.error('Error updating loyalty program:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while updating loyalty program'
+    });
+  }
+};
+
+// @desc    Delete loyalty program (admin)
+// @route   DELETE /api/loyalty/programs/:id
+// @access  Private/Admin
+const deleteLoyaltyProgram = async (req, res) => {
+  try {
+    const program = await LoyaltyProgram.findById(req.params.id);
+
+    if (!program) {
+      return res.status(404).json({
+        success: false,
+        message: 'Loyalty program not found'
+      });
+    }
+
+    await program.remove();
+
+    res.status(200).json({
+      success: true,
+      message: 'Loyalty program deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting loyalty program:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting loyalty program'
+    });
+  }
+};
+
+// @desc    Join loyalty program
+// @route   POST /api/loyalty/join
+// @access  Private
+const joinLoyaltyProgram = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    // Check if user is already a loyalty member
+    const user = await User.findById(userId);
+    if (user.isLoyaltyMember) {
+      return res.status(400).json({
+        success: false,
+        message: 'You are already a member of the loyalty program'
+      });
+    }
+
+    // Mark user as loyalty member
+    user.isLoyaltyMember = true;
+    user.loyaltyPoints = 0;
+    await user.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Successfully joined the loyalty program!'
+    });
+  } catch (error) {
+    console.error('Error joining loyalty program:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while joining loyalty program'
     });
   }
 };
@@ -84,6 +228,38 @@ const getUserLoyaltyPoints = async (req, res) => {
   }
 };
 
+// @desc    Get all users loyalty data (Admin only)
+// @route   GET /api/loyalty/users
+// @access  Private/Admin
+const getUsersLoyaltyData = async (req, res) => {
+  try {
+    // Get all users with their loyalty data, including those with 0 points
+    const users = await User.find(
+      { role: 'customer' },
+      'name email loyaltyPoints loyaltyTier totalPointsEarned totalPointsRedeemed loyaltyJoinDate createdAt'
+    ).sort({ loyaltyPoints: -1 });
+
+    // If no users have loyalty data, return empty array
+    if (!users || users.length === 0) {
+      return res.status(200).json({
+        success: true,
+        data: []
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: users
+    });
+  } catch (error) {
+    console.error('Error fetching users loyalty data:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while fetching users loyalty data'
+    });
+  }
+};
+
 // @desc    Redeem loyalty points for reward
 // @route   POST /api/loyalty/redeem
 // @access  Private
@@ -126,9 +302,6 @@ const redeemLoyaltyPoints = async (req, res) => {
     user.loyaltyPoints -= reward.pointsRequired;
     await user.save();
 
-    // Here you would create a discount code or apply the reward
-    // For now, we'll just return success
-    
     res.status(200).json({
       success: true,
       message: 'Reward redeemed successfully',
@@ -191,145 +364,7 @@ const addLoyaltyPoints = async (req, res) => {
   }
 };
 
-// @desc    Create/Update loyalty program (Admin only)
-// @route   POST /api/loyalty/programs
-// @access  Private/Admin
-const createLoyaltyProgram = async (req, res) => {
-  try {
-    const { name, description, pointsPerRupee, rewards, tiers, isActive } = req.body;
-    
-    const program = new LoyaltyProgram({
-      name,
-      description,
-      pointsPerRupee,
-      rewards,
-      tiers,
-      isActive
-    });
-
-    await program.save();
-
-    res.status(201).json({
-      success: true,
-      message: 'Loyalty program created successfully',
-      data: program
-    });
-  } catch (error) {
-    console.error('Error creating loyalty program:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while creating loyalty program'
-    });
-  }
-};
-
-// @desc    Get all loyalty programs (Admin only)
-// @route   GET /api/loyalty/programs
-// @access  Private/Admin
-const getAllLoyaltyPrograms = async (req, res) => {
-  try {
-    const programs = await LoyaltyProgram.find({}).sort({ createdAt: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: programs.length,
-      programs
-    });
-  } catch (error) {
-    console.error('Error fetching loyalty programs:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching loyalty programs'
-    });
-  }
-};
-
-// @desc    Update loyalty program (Admin only)
-// @route   PUT /api/loyalty/programs/:id
-// @access  Private/Admin
-const updateLoyaltyProgram = async (req, res) => {
-  try {
-    const program = await LoyaltyProgram.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-
-    if (!program) {
-      return res.status(404).json({
-        success: false,
-        message: 'Loyalty program not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Loyalty program updated successfully',
-      data: program
-    });
-  } catch (error) {
-    console.error('Error updating loyalty program:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while updating loyalty program'
-    });
-  }
-};
-
-// @desc    Delete loyalty program (Admin only)
-// @route   DELETE /api/loyalty/programs/:id
-// @access  Private/Admin
-const deleteLoyaltyProgram = async (req, res) => {
-  try {
-    const program = await LoyaltyProgram.findByIdAndDelete(req.params.id);
-
-    if (!program) {
-      return res.status(404).json({
-        success: false,
-        message: 'Loyalty program not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      message: 'Loyalty program deleted successfully'
-    });
-  } catch (error) {
-    console.error('Error deleting loyalty program:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while deleting loyalty program'
-    });
-  }
-};
-
-// @desc    Get all users loyalty data (Admin only)
-// @route   GET /api/loyalty/users
-// @access  Private/Admin
-const getUsersLoyaltyData = async (req, res) => {
-  try {
-    const users = await User.find(
-      { loyaltyPoints: { $gt: 0 } },
-      'name email loyaltyPoints loyaltyTier totalPointsEarned totalPointsRedeemed loyaltyJoinDate'
-    ).sort({ loyaltyPoints: -1 });
-
-    res.status(200).json({
-      success: true,
-      count: users.length,
-      users
-    });
-  } catch (error) {
-    console.error('Error fetching users loyalty data:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server error while fetching users loyalty data'
-    });
-  }
-};
-
 // @desc    Award points for booking (Internal use)
-// @route   POST /api/loyalty/award-points
-// @access  Private
 const awardPointsForBooking = async (userId, amount) => {
   try {
     const program = await LoyaltyProgram.findOne({ isActive: true });
@@ -357,13 +392,14 @@ const awardPointsForBooking = async (userId, amount) => {
 
 module.exports = {
   getLoyaltyProgram,
-  getUserLoyaltyPoints,
-  redeemLoyaltyPoints,
-  addLoyaltyPoints,
+  getLoyaltyPrograms,
   createLoyaltyProgram,
-  getAllLoyaltyPrograms,
   updateLoyaltyProgram,
   deleteLoyaltyProgram,
+  joinLoyaltyProgram,
+  getUserLoyaltyPoints,
   getUsersLoyaltyData,
+  redeemLoyaltyPoints,
+  addLoyaltyPoints,
   awardPointsForBooking
 };

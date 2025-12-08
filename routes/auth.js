@@ -8,7 +8,8 @@ const {
     resetPassword,
     updatePassword,
     verifyEmail,
-    resendVerification
+    resendVerification,
+    socialLogin
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { validateRequest } = require('../middleware/validation');
@@ -80,6 +81,24 @@ const resetPasswordValidation = [
         .withMessage('Reset token is required')
 ];
 
+// Social login validation
+const socialLoginValidation = [
+    body('uid')
+        .notEmpty()
+        .withMessage('Firebase UID is required'),
+    body('email')
+        .isEmail()
+        .normalizeEmail()
+        .withMessage('Please provide a valid email'),
+    body('displayName')
+        .trim()
+        .isLength({ min: 2, max: 50 })
+        .withMessage('Display name must be between 2 and 50 characters'),
+    body('provider')
+        .isIn(['google'])
+        .withMessage('Provider must be google')
+];
+
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
@@ -89,6 +108,11 @@ router.post('/register', registerValidation, validateRequest, register);
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', loginValidation, validateRequest, login);
+
+// @desc    Social login (Google only)
+// @route   POST /api/auth/social-login
+// @access  Public
+router.post('/social-login', socialLoginValidation, validateRequest, socialLogin);
 
 // @desc    Logout user
 // @route   POST /api/auth/logout

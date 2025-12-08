@@ -3,8 +3,7 @@ const mongoose = require('mongoose');
 const BookingSchema = new mongoose.Schema({
     bookingId: {
         type: String,
-        unique: true,
-        required: true
+        unique: true
     },
     user: {
         type: mongoose.Schema.ObjectId,
