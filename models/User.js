@@ -119,13 +119,8 @@ const UserSchema = new mongoose.Schema({
     // Social authentication fields
     authProvider: {
         type: String,
-        enum: ['local', 'google', 'facebook'],
+        enum: ['local', 'google'],
         default: 'local'
-    },
-    firebaseUid: {
-        type: String,
-        sparse: true,
-        unique: true
     },
     photoURL: String
 }, {
@@ -136,7 +131,6 @@ const UserSchema = new mongoose.Schema({
 UserSchema.index({ email: 1 });
 UserSchema.index({ phone: 1 });
 UserSchema.index({ role: 1 });
-UserSchema.index({ firebaseUid: 1 });
 
 // Encrypt password using bcrypt
 UserSchema.pre('save', async function(next) {
