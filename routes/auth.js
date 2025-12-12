@@ -9,7 +9,8 @@ const {
     updatePassword,
     verifyEmail,
     resendVerification,
-    socialLogin
+    socialLogin,
+    googleLogin
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { validateRequest } = require('../middleware/validation');
@@ -108,6 +109,7 @@ router.post('/register', registerValidation, validateRequest, register);
 // @route   POST /api/auth/login
 // @access  Public
 router.post('/login', loginValidation, validateRequest, login);
+router.post('/login/google', validateRequest, googleLogin);
 
 // @desc    Social login (Google only)
 // @route   POST /api/auth/social-login
