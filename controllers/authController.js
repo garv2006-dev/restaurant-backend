@@ -296,45 +296,11 @@ const resendVerification = async (req, res, next) => {
 
 const socialLogin = async (req, res, next) => {
     try {
-        const { uid, email, displayName, provider, photoURL } = req.body;
-        let user = await User.findOne({
-            $or: [{ email }, { firebaseUid: uid }]
-        });
-        if (!user) {
-            user = await User.create({
-                name: displayName,
-                email,
-                authProvider: provider,
-                firebaseUid: uid,
-                photoURL,
-                isEmailVerified: true,
-                password: crypto.randomBytes(32).toString('hex')
-            });
-        } else {
-            if (!user.firebaseUid) {
-                user.firebaseUid = uid;
-                user.authProvider = provider;
-            }
-            if (!user.photoURL && photoURL) {
-                user.photoURL = photoURL;
-            }
-            user.lastLogin = Date.now();
-            await user.save({ validateBeforeSave: false });
-        }
-        const token = user.getSignedJwtToken();
-        res.status(200).json({
-            success: true,
-            token,
-            user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                isEmailVerified: user.isEmailVerified,
-                avatar: user.avatar || user.photoURL,
-                loyaltyPoints: user.loyaltyPoints,
-                loyaltyTier: user.loyaltyTier
-            }
+        // This function is deprecated since we removed Firebase
+        // Use googleLogin instead for Google OAuth
+        return res.status(503).json({
+            success: false,
+            message: 'Social login is no longer available. Please use Google login instead.'
         });
     } catch (error) {
         next(error);
