@@ -1,12 +1,15 @@
 const User = require('../models/User');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
+
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 const register = async (req, res, next) => {
     try {
         const { name, email, phone, password } = req.body;
-        const existingUser = await User.findOne({ 
-            $or: [{ email }, { phone }] 
+        const existingUser = await User.findOne({
+            $or: [{ email }, { phone }]
         });
         if (existingUser) {
             return res.status(400).json({
@@ -34,6 +37,59 @@ const register = async (req, res, next) => {
                 isEmailVerified: user.isEmailVerified
             }
         });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const googleLogin = async (req, res, next) => {
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: 'idToken missing' });
+
+    try {
+        // Verify token with Google
+        const ticket = await client.verifyIdToken({
+            idToken,
+            audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        // payload contains email, name, sub (google id), picture, etc.
+        const { sub: googleId, email, name, picture } = payload;
+
+        const existingUser = await User.findOne({
+            email
+        });
+
+        if (existingUser) {
+            const token = existingUser.getSignedJwtToken();
+            res.status(201).json({
+                success: true,
+                token,
+                user: existingUser
+            });
+        } else {
+            const createdUser = await User.create({
+                name,
+                email,
+                phone: null,
+                password: "Test@123",
+                authProvider: 'google',
+                avatar: picture,
+                isEmailVerified: true,
+                role: 'customer'
+            });
+
+            const user = await User.findOne({
+                email: createdUser?.email
+            });
+
+            const token = user.getSignedJwtToken();
+            res.status(201).json({
+                success: true,
+                token,
+                user
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -241,8 +297,8 @@ const resendVerification = async (req, res, next) => {
 const socialLogin = async (req, res, next) => {
     try {
         const { uid, email, displayName, provider, photoURL } = req.body;
-        let user = await User.findOne({ 
-            $or: [{ email }, { firebaseUid: uid }] 
+        let user = await User.findOne({
+            $or: [{ email }, { firebaseUid: uid }]
         });
         if (!user) {
             user = await User.create({
@@ -295,5 +351,6 @@ module.exports = {
     updatePassword,
     verifyEmail,
     resendVerification,
-    socialLogin
+    socialLogin,
+    googleLogin
 };
