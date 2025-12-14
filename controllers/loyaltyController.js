@@ -145,23 +145,38 @@ const joinLoyaltyProgram = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    // Check if user is already a loyalty member
+    // Auto-enroll user if they don't have loyalty points yet
     const user = await User.findById(userId);
-    if (user.isLoyaltyMember) {
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Check if user already has loyalty points (already enrolled)
+    if (user.loyaltyPoints > 0) {
       return res.status(400).json({
         success: false,
         message: 'You are already a member of the loyalty program'
       });
     }
 
-    // Mark user as loyalty member
-    user.isLoyaltyMember = true;
+    // Initialize loyalty points for new member
     user.loyaltyPoints = 0;
+    user.totalPointsEarned = 0;
+    user.totalPointsRedeemed = 0;
+    user.loyaltyTier = 'Bronze';
+    user.loyaltyJoinDate = new Date();
     await user.save();
 
     res.status(201).json({
       success: true,
-      message: 'Successfully joined the loyalty program!'
+      message: 'Successfully joined the loyalty program!',
+      data: {
+        loyaltyPoints: user.loyaltyPoints,
+        loyaltyTier: user.loyaltyTier
+      }
     });
   } catch (error) {
     console.error('Error joining loyalty program:', error);

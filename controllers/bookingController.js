@@ -68,7 +68,7 @@ const createBooking = async (req, res) => {
         const gst = subtotal * 0.18;
         const totalAmount = subtotal + gst;
 
-        // Create booking
+        // Create booking with proper payment method handling
         const booking = await Booking.create({
             user: req.user.id,
             room: roomId,
@@ -88,7 +88,12 @@ const createBooking = async (req, res) => {
             },
             specialRequests,
             preferences: preferences || {},
-            paymentDetails: paymentDetails || {}
+            paymentDetails: {
+                method: paymentDetails?.method || 'Cash',
+                transactionId: paymentDetails?.transactionId || null,
+                paidAmount: paymentDetails?.method !== 'Cash' ? totalAmount : 0,
+                paymentDate: paymentDetails?.method !== 'Cash' ? new Date() : null
+            }
         });
 
         // Create payment record automatically

@@ -305,8 +305,15 @@ BookingSchema.methods.canBeCancelled = function() {
     const checkInDate = new Date(this.bookingDates.checkInDate);
     const hoursUntilCheckIn = (checkInDate - now) / (1000 * 60 * 60);
     
-    // Can cancel if more than 24 hours before check-in and status is Pending or Confirmed
-    return hoursUntilCheckIn > 24 && ['Pending', 'Confirmed'].includes(this.status);
+    // More flexible cancellation policy:
+    // - Can cancel if more than 2 hours before check-in and status is Pending or Confirmed
+    // - Always allow cancellation for Pending bookings regardless of time
+    if (this.status === 'Pending') {
+        return true;
+    }
+    
+    // For Confirmed bookings, allow cancellation up to 2 hours before check-in
+    return hoursUntilCheckIn > 2 && ['Confirmed'].includes(this.status);
 };
 
 // Method to calculate cancellation fee
@@ -317,14 +324,20 @@ BookingSchema.methods.calculateCancellationFee = function() {
     
     let feePercentage = 0;
     
-    if (hoursUntilCheckIn < 24) {
-        feePercentage = 100; // No refund
-    } else if (hoursUntilCheckIn < 48) {
-        feePercentage = 50; // 50% cancellation fee
-    } else if (hoursUntilCheckIn < 72) {
-        feePercentage = 25; // 25% cancellation fee
+    // More flexible cancellation fee structure:
+    if (hoursUntilCheckIn < 2) {
+        feePercentage = 100; // No refund for last-minute cancellations
+    } else if (hoursUntilCheckIn < 6) {
+        feePercentage = 25; // 25% fee for cancellations within 6 hours
+    } else if (hoursUntilCheckIn < 24) {
+        feePercentage = 10; // 10% fee for cancellations within 24 hours
     }
-    // else feePercentage = 0 (free cancellation)
+    // else feePercentage = 0 (free cancellation for more than 24 hours)
+    
+    // No fee for Pending bookings
+    if (this.status === 'Pending') {
+        feePercentage = 0;
+    }
     
     return (this.pricing.totalAmount * feePercentage) / 100;
 };
