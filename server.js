@@ -12,7 +12,6 @@ require('dotenv').config();
 
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
-const { initializeSocket } = require('./config/socket');
 
 // Route imports
 const authRoutes = require('./routes/auth');

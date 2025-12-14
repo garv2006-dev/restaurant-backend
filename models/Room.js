@@ -140,6 +140,15 @@ const RoomSchema = new mongoose.Schema({
         enum: ['Available', 'Occupied', 'Maintenance', 'Out of Order'],
         default: 'Available'
     },
+    lockedBy: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'User',
+        default: null
+    },
+    lockExpiry: {
+        type: Date,
+        default: null
+    },
     floor: {
         type: Number,
         required: true,
@@ -253,6 +262,68 @@ RoomSchema.methods.getPriceForDates = function(checkIn, checkOut) {
     }
     
     return totalPrice;
+};
+
+// Method to lock room for real-time booking
+RoomSchema.methods.lockRoom = async function(userId, lockDurationMinutes = 5) {
+    const now = new Date();
+    const lockExpiry = new Date(now.getTime() + lockDurationMinutes * 60 * 1000);
+    
+    this.status = 'locked';
+    this.lockedBy = userId;
+    this.lockExpiry = lockExpiry;
+    
+    await this.save();
+    return this;
+};
+
+// Method to unlock room
+RoomSchema.methods.unlockRoom = async function() {
+    this.status = 'Available';
+    this.lockedBy = null;
+    this.lockExpiry = null;
+    
+    await this.save();
+    return this;
+};
+
+// Method to confirm room booking
+RoomSchema.methods.confirmBooking = async function() {
+    this.status = 'booked';
+    this.lockedBy = null;
+    this.lockExpiry = null;
+    
+    await this.save();
+    return this;
+};
+
+// Method to check if lock is expired and release if needed
+RoomSchema.methods.checkAndReleaseExpiredLock = async function() {
+    if (this.status === 'locked' && this.lockExpiry && new Date() > this.lockExpiry) {
+        await this.unlockRoom();
+        return true; // Lock was released
+    }
+    return false; // Lock was not expired
+};
+
+// Static method to release all expired locks
+RoomSchema.statics.releaseExpiredLocks = async function() {
+    const now = new Date();
+    const result = await this.updateMany(
+        {
+            status: 'locked',
+            lockExpiry: { $lt: now }
+        },
+        {
+            $set: {
+                status: 'available',
+                lockedBy: null,
+                lockExpiry: null
+            }
+        }
+    );
+    
+    return result.modifiedCount;
 };
 
 // Update average rating

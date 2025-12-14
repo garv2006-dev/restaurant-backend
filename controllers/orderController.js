@@ -1,5 +1,6 @@
 const Order = require('../models/Order');
 const Payment = require('../models/Payment');
+const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
 const { emitNewOrder, emitOrderStatusChange, emitUserNotification } = require('../config/socket');
 
@@ -143,6 +144,22 @@ const createOrder = async (req, res) => {
       });
     } catch (socketError) {
       console.error('Socket notification error:', socketError);
+    }
+
+    // Award loyalty points for completed order
+    try {
+      const pointsToAdd = Math.floor(sTotal * 0.1); // ₹10 spent = 1 point (10 points per ₹100)
+      const user = await User.findById(req.user.id);
+      
+      if (user) {
+        user.loyaltyPoints += pointsToAdd;
+        user.totalPointsEarned += pointsToAdd;
+        await user.save();
+        
+        console.log(`Awarded ${pointsToAdd} loyalty points to user ${req.user.id} for order ${order.orderNumber}`);
+      }
+    } catch (loyaltyError) {
+      console.error('Error awarding loyalty points for order:', loyaltyError);
     }
 
     return res.status(201).json({

@@ -26,6 +26,101 @@ const initializeSocket = (server) => {
       console.log('User joined personal room:', userId, socket.id);
     });
 
+    // Join rooms page for real-time room updates
+    socket.on('join_rooms_page', () => {
+      socket.join('rooms-page');
+      console.log('User joined rooms page:', socket.id);
+    });
+
+    // Handle room locking
+    socket.on('lock_room', async (data) => {
+      try {
+        const { roomId, userId } = data;
+        console.log(`Room lock attempt: Room ${roomId} by User ${userId}`);
+        
+        // Broadcast to all clients on rooms page
+        socket.to('rooms-page').emit('room_locked', {
+          roomId,
+          lockedBy: userId,
+          timestamp: new Date()
+        });
+        
+        // Also emit general room update
+        io.to('rooms-page').emit('room_updated', {
+          roomId,
+          status: 'locked',
+          lockedBy: userId
+        });
+        
+      } catch (error) {
+        console.error('Error handling room lock:', error);
+        socket.emit('booking_failed', { 
+          message: 'Failed to lock room',
+          error: error.message 
+        });
+      }
+    });
+
+    // Handle booking confirmation
+    socket.on('confirm_booking', async (data) => {
+      try {
+        const { roomId, userId, bookingId } = data;
+        console.log(`Booking confirmed: Room ${roomId}, Booking ${bookingId}`);
+        
+        // Broadcast to all clients
+        io.to('rooms-page').emit('room_updated', {
+          roomId,
+          status: 'booked',
+          bookingId
+        });
+        
+        // Notify admin dashboard
+        io.to('admin-dashboard').emit('new_booking_confirmed', {
+          roomId,
+          userId,
+          bookingId,
+          timestamp: new Date()
+        });
+        
+      } catch (error) {
+        console.error('Error confirming booking:', error);
+        socket.emit('booking_failed', { 
+          message: 'Failed to confirm booking',
+          error: error.message 
+        });
+      }
+    });
+
+    // Handle booking cancellation
+    socket.on('cancel_booking', async (data) => {
+      try {
+        const { roomId, userId, bookingId } = data;
+        console.log(`Booking cancelled: Room ${roomId}, Booking ${bookingId}`);
+        
+        // Broadcast to all clients
+        io.to('rooms-page').emit('room_updated', {
+          roomId,
+          status: 'available',
+          bookingId: null
+        });
+        
+        // Notify admin dashboard
+        io.to('admin-dashboard').emit('booking_cancelled', {
+          roomId,
+          userId,
+          bookingId,
+          timestamp: new Date()
+        });
+        
+      } catch (error) {
+        console.error('Error cancelling booking:', error);
+        socket.emit('booking_failed', { 
+          message: 'Failed to cancel booking',
+          error: error.message 
+        });
+      }
+    });
+
     // Handle booking updates
     socket.on('booking-update', (data) => {
       socket.to('admin-dashboard').emit('booking-update', data);
@@ -138,6 +233,79 @@ const emitUserNotification = (userId, notification) => {
   }
 };
 
+// Emit room lock notification
+const emitRoomLocked = (roomId, userId) => {
+  try {
+    const socketIo = getSocketIo();
+    const data = { roomId, lockedBy: userId, timestamp: new Date() };
+    
+    socketIo.to('rooms-page').emit('room_locked', data);
+    socketIo.to('rooms-page').emit('room_updated', {
+      roomId,
+      status: 'locked',
+      lockedBy: userId
+    });
+    
+    console.log('Room lock emitted:', data);
+  } catch (error) {
+    console.error('Error emitting room lock:', error);
+  }
+};
+
+// Emit room unlock notification
+const emitRoomUnlocked = (roomId) => {
+  try {
+    const socketIo = getSocketIo();
+    const data = { roomId, status: 'available', timestamp: new Date() };
+    
+    socketIo.to('rooms-page').emit('room_updated', data);
+    
+    console.log('Room unlock emitted:', data);
+  } catch (error) {
+    console.error('Error emitting room unlock:', error);
+  }
+};
+
+// Emit booking confirmed notification
+const emitBookingConfirmed = (roomId, bookingId, userId) => {
+  try {
+    const socketIo = getSocketIo();
+    const data = { roomId, status: 'booked', bookingId, timestamp: new Date() };
+    
+    socketIo.to('rooms-page').emit('room_updated', data);
+    socketIo.to('admin-dashboard').emit('new_booking_confirmed', {
+      roomId,
+      userId,
+      bookingId,
+      timestamp: new Date()
+    });
+    
+    console.log('Booking confirmed emitted:', data);
+  } catch (error) {
+    console.error('Error emitting booking confirmed:', error);
+  }
+};
+
+// Emit booking cancelled notification
+const emitBookingCancelled = (roomId, bookingId, userId) => {
+  try {
+    const socketIo = getSocketIo();
+    const data = { roomId, status: 'available', bookingId: null, timestamp: new Date() };
+    
+    socketIo.to('rooms-page').emit('room_updated', data);
+    socketIo.to('admin-dashboard').emit('booking_cancelled', {
+      roomId,
+      userId,
+      bookingId,
+      timestamp: new Date()
+    });
+    
+    console.log('Booking cancelled emitted:', data);
+  } catch (error) {
+    console.error('Error emitting booking cancelled:', error);
+  }
+};
+
 module.exports = {
   initializeSocket,
   getSocketIo,
@@ -146,5 +314,9 @@ module.exports = {
   emitNewOrder,
   emitBookingStatusChange,
   emitOrderStatusChange,
-  emitUserNotification
+  emitUserNotification,
+  emitRoomLocked,
+  emitRoomUnlocked,
+  emitBookingConfirmed,
+  emitBookingCancelled
 };
