@@ -22,9 +22,6 @@ const UserSchema = new mongoose.Schema({
     },
     phone: {
         type: String,
-        required: function() {
-            return this.authProvider === 'local';
-        },
         unique: true,
         sparse: true,
         match: [/^[\+]?[1-9][\d]{0,15}$/, 'Please add a valid phone number'],
@@ -130,7 +127,6 @@ const UserSchema = new mongoose.Schema({
 
 // Index for better performance
 UserSchema.index({ email: 1 });
-UserSchema.index({ phone: 1 });
 UserSchema.index({ role: 1 });
 
 // Encrypt password using bcrypt
