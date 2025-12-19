@@ -2,6 +2,7 @@ const User = require('../models/User');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
+const sendEmail = require('../utils/sendEmail');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -169,19 +170,95 @@ const getMe = async (req, res, next) => {
 const forgotPassword = async (req, res, next) => {
     try {
         const user = await User.findOne({ email: req.body.email });
+        
+        console.log("user>>>>>", user)
+        // Always return generic message for security
         if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: 'There is no user with that email'
+            return res.status(200).json({
+                success: true,
+                message: 'If the email exists in our system, a password reset link has been sent'
             });
         }
+
+        // Generate reset token
         const resetToken = user.getResetPasswordToken();
         await user.save({ validateBeforeSave: false });
-        res.status(200).json({
-            success: true,
-            message: 'Password reset token generated',
-            resetToken
-        });
+
+        // Create reset URL
+        const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+        // Email message
+        const message = `
+You are receiving this email because you requested to reset your password.
+
+Please click the link below to reset your password:
+
+${resetUrl}
+
+This link will expire in 10 minutes.
+
+If you did not request this, please ignore this email.
+        `;
+
+        const htmlMessage = `
+<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background-color: #f0f0f0; padding: 20px; text-align: center; }
+        .content { padding: 20px; }
+        .button { display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
+        .footer { background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Password Reset Request</h1>
+        </div>
+        <div class="content">
+            <p>Hello,</p>
+            <p>You requested to reset your password. Click the button below to proceed:</p>
+            <a href="${resetUrl}" class="button">Reset Password</a>
+            <p style="color: #666; font-size: 12px;">Or copy and paste this link in your browser:</p>
+            <p style="color: #666; font-size: 12px; word-break: break-all;">${resetUrl}</p>
+            <p style="color: #999; font-size: 12px;">This link will expire in 10 minutes.</p>
+            <p style="color: #999; font-size: 12px;">If you did not request this email, please ignore it.</p>
+        </div>
+        <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} Restaurant App. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
+        `;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Password Reset Request',
+                message,
+                html: htmlMessage
+            });
+
+            res.status(200).json({
+                success: true,
+                message: 'If the email exists in our system, a password reset link has been sent'
+            });
+        } catch (error) {
+            // Clear reset token if email sending fails
+            user.resetPasswordToken = undefined;
+            user.resetPasswordExpire = undefined;
+            await user.save({ validateBeforeSave: false });
+
+            console.error('Email sending error:', error);
+            return res.status(500).json({
+                success: false,
+                message: 'Error sending password reset email'
+            });
+        }
     } catch (error) {
         next(error);
     }
@@ -210,7 +287,16 @@ const resetPassword = async (req, res, next) => {
         const token = user.getSignedJwtToken();
         res.status(200).json({
             success: true,
-            token
+            token,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                phone: user.phone,
+                role: user.role,
+                isEmailVerified: user.isEmailVerified,
+                avatar: user.avatar
+            }
         });
     } catch (error) {
         next(error);
