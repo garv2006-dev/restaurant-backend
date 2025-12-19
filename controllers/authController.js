@@ -236,12 +236,23 @@ If you did not request this, please ignore this email.
         `;
 
         try {
-            await sendEmail({
-                email: user.email,
-                subject: 'Password Reset Request',
-                message,
-                html: htmlMessage
-            });
+            // Non-blocking email sending - fire and forget
+            if (sendEmail.sendEmailAsync) {
+                sendEmail.sendEmailAsync({
+                    email: user.email,
+                    subject: 'Password Reset Request',
+                    message,
+                    html: htmlMessage
+                });
+            } else {
+                // Fallback for older implementation
+                sendEmail({
+                    email: user.email,
+                    subject: 'Password Reset Request',
+                    message,
+                    html: htmlMessage
+                }).catch(err => console.error('[Email Error]', { email: user.email, error: err.message, timestamp: new Date().toISOString() }));
+            }
 
             res.status(200).json({
                 success: true,
