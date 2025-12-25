@@ -183,7 +183,6 @@ const PaymentSchema = new mongoose.Schema({
 });
 
 // Indexes
-PaymentSchema.index({ paymentId: 1 });
 PaymentSchema.index({ booking: 1 });
 PaymentSchema.index({ order: 1 });
 PaymentSchema.index({ user: 1 });

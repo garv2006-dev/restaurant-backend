@@ -112,7 +112,6 @@ const discountSchema = new mongoose.Schema({
 });
 
 // Indexes for efficient queries
-discountSchema.index({ code: 1 });
 discountSchema.index({ isActive: 1, validFrom: 1, validUntil: 1 });
 discountSchema.index({ 'usedBy.user': 1 });
 

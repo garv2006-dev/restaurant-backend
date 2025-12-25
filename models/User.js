@@ -129,7 +129,6 @@ const UserSchema = new mongoose.Schema(
 );
 
 // Index for better performance
-UserSchema.index({ email: 1 });
 UserSchema.index({ role: 1 });
 
 // Encrypt password using bcrypt

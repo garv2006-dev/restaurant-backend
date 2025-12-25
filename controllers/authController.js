@@ -238,6 +238,7 @@ If you did not request this, please ignore this email.
         try {
             // Non-blocking email sending - fire and forget
             if (sendEmail.sendEmailAsync) {
+                console.log("sendEmail.sendEmailAsync CALLED", sendEmail)
                 sendEmail.sendEmailAsync({
                     email: user.email,
                     subject: 'Password Reset Request',
@@ -245,6 +246,8 @@ If you did not request this, please ignore this email.
                     html: htmlMessage
                 });
             } else {
+                console.log("sendEmail. ELSE CALLED")
+
                 // Fallback for older implementation
                 sendEmail({
                     email: user.email,
