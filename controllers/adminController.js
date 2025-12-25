@@ -234,8 +234,11 @@ const getAllBookings = async (req, res) => {
 const updateBookingStatus = async (req, res) => {
     try {
         const { status } = req.body;
+        const sendEmail = require('../utils/sendEmail');
 
-        const booking = await Booking.findById(req.params.id);
+        const booking = await Booking.findById(req.params.id)
+            .populate('user', 'name email')
+            .populate('room', 'name type roomNumber');
 
         if (!booking) {
             return res.status(404).json({
@@ -257,6 +260,98 @@ const updateBookingStatus = async (req, res) => {
         }
 
         await booking.save();
+
+        // Send email notifications based on status change
+        try {
+            const guestName = booking.guestDetails?.primaryGuest?.name || 'Guest';
+            const guestEmail = booking.guestDetails?.primaryGuest?.email || booking.user?.email;
+            const roomName = booking.room?.name || 'Unknown Room';
+            const checkInDate = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-IN', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            const checkOutDate = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-IN', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+
+            let emailSubject = '';
+            let emailMessage = '';
+
+            if (status === 'Confirmed' && oldStatus === 'Pending') {
+                emailSubject = `Booking Confirmed - ${booking.bookingId}`;
+                emailMessage = `
+                    <p>Dear ${guestName},</p>
+                    
+                    <p>Great news! Your booking has been <strong>confirmed</strong>.</p>
+                    
+                    <h4 style="color: #28a745; margin-top: 20px;">Booking Details:</h4>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
+                        <li><strong>Room:</strong> ${roomName}</li>
+                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
+                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
+                        <li><strong>Number of Nights:</strong> ${booking.bookingDates.nights}</li>
+                        <li><strong>Total Amount:</strong> ₹${booking.pricing.totalAmount.toFixed(2)}</li>
+                    </ul>
+                    
+                    <p style="background-color: #e7f3ff; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0;">
+                        <strong style="color: #0c5460;">✓ The room is available for your dates.</strong> 
+                        You can proceed with your booking. Our team will be ready to welcome you!
+                    </p>
+                    
+                    <p>If you have any questions or special requests, please don't hesitate to contact us.</p>
+                    
+                    <p style="margin-top: 30px; color: #666;">
+                        Best regards,<br>
+                        <strong>Shemaroo Bollywood Restaurant & Rooms Team</strong>
+                    </p>
+                `;
+            } else if (status === 'Cancelled') {
+                emailSubject = `Booking Cancelled - ${booking.bookingId}`;
+                emailMessage = `
+                    <p>Dear ${guestName},</p>
+                    
+                    <p>We regret to inform you that your booking could not be confirmed at this time.</p>
+                    
+                    <h4 style="color: #dc3545; margin-top: 20px;">Booking Details:</h4>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
+                        <li><strong>Room:</strong> ${roomName}</li>
+                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
+                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
+                    </ul>
+                    
+                    <p style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;">
+                        <strong style="color: #721c24;">✗ Unfortunately, the room is not available</strong> 
+                        for your selected dates. We apologize for the inconvenience.
+                    </p>
+                    
+                    <p>Please try booking for different dates or consider our other available rooms. We would be happy to help you find an alternative.</p>
+                    
+                    <p style="margin-top: 30px; color: #666;">
+                        Best regards,<br>
+                        <strong>Shemaroo Bollywood Restaurant & Rooms Team</strong>
+                    </p>
+                `;
+            }
+
+            // Send email if there's a message to send
+            if (emailMessage && guestEmail) {
+                await sendEmail({
+                    email: guestEmail,
+                    subject: emailSubject,
+                    message: emailMessage
+                });
+            }
+        } catch (emailError) {
+            console.error('Email sending error:', emailError);
+            // Don't fail the request if email fails to send
+        }
 
         res.status(200).json({
             success: true,

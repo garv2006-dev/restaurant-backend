@@ -185,13 +185,13 @@ ReviewSchema.index({ reviewType: 1 });
 ReviewSchema.pre('save', function(next) {
     if (this.reviewType === 'room' || this.reviewType === 'service' || this.reviewType === 'overall') {
         if (!this.room) {
-            next(new Error('Room is required for room/service/overall reviews'));
+            return next(new Error('Room is required for room/service/overall reviews'));
         }
     }
     
     if (this.reviewType === 'menuItem') {
         if (!this.menuItem) {
-            next(new Error('Menu item is required for menu item reviews'));
+            return next(new Error('Menu item is required for menu item reviews'));
         }
     }
     

@@ -8,6 +8,7 @@ const { protect, authorize } = require('../middleware/auth');
 const {
     createBooking,
     getBookings,
+    getAllBookings,
     getBooking,
     updateBooking,
     cancelBooking,
@@ -17,6 +18,9 @@ const {
 
 // All routes require authentication
 router.use(protect);
+
+// Admin routes (must come before generic /:id route)
+router.get('/admin/all', authorize('admin', 'staff'), getAllBookings);
 
 // Customer routes
 router.post('/', createBooking);

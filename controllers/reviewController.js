@@ -8,7 +8,9 @@ const MenuItem = require('../models/MenuItem');
 // @access  Private
 const createReview = async (req, res) => {
     try {
-        const { booking, room, menuItem, rating, comment } = req.body;
+        const { booking, room, menuItem, rating, title, comment, reviewType } = req.body;
+        
+        console.log('Creating review with data:', { booking, room, menuItem, rating, title, comment, reviewType });
 
         // Verify booking belongs to user and is completed
         if (booking) {
@@ -49,7 +51,9 @@ const createReview = async (req, res) => {
             room,
             menuItem,
             rating,
-            comment
+            title,
+            comment,
+            reviewType
         });
 
         await review.populate([
@@ -76,9 +80,20 @@ const createReview = async (req, res) => {
 
     } catch (error) {
         console.error('Create review error:', error);
+        
+        // Handle validation errors
+        if (error.name === 'ValidationError') {
+            const messages = Object.values(error.errors).map(err => err.message);
+            return res.status(400).json({
+                success: false,
+                message: messages.join(', ')
+            });
+        }
+        
+        // Handle other errors
         res.status(500).json({
             success: false,
-            message: 'Server Error'
+            message: error.message || 'Server Error'
         });
     }
 };

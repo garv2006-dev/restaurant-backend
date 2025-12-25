@@ -232,7 +232,6 @@ const BookingSchema = new mongoose.Schema({
 });
 
 // Indexes
-BookingSchema.index({ bookingId: 1 });
 BookingSchema.index({ user: 1 });
 BookingSchema.index({ room: 1 });
 BookingSchema.index({ status: 1 });

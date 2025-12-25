@@ -137,24 +137,59 @@ const createBooking = async (req, res) => {
 
     // Send confirmation email
     try {
+      // Build menu items list for email
+      let menuItemsText = '';
+      if (menuItems && menuItems.length > 0) {
+        menuItemsText = '\n\nMenu Items Ordered:\n';
+        menuItems.forEach((item) => {
+          menuItemsText += `- ${item.name} × ${item.quantity} = ₹${(item.price * item.quantity).toFixed(2)}\n`;
+        });
+      }
+
+      // Build extra services list for email
+      let extraServicesText = '';
+      if (extraServices && extraServices.length > 0) {
+        extraServicesText = '\n\nExtra Services:\n';
+        extraServices.forEach((service) => {
+          extraServicesText += `- ${service.name} × ${service.quantity} = ₹${(service.price * service.quantity).toFixed(2)}\n`;
+        });
+      }
+
       const emailMessage = `
-                Dear ${guestDetails.primaryGuest.name},
-                
-                Your booking has been confirmed!
-                
-                Booking Details:
-                - Booking ID: ${booking.bookingId}
-                - Room: ${booking.room.name} (${booking.room.type})
-                - Check-in: ${checkIn.toDateString()}
-                - Check-out: ${checkOut.toDateString()}
-                - Nights: ${nights}
-                - Total Amount: $${totalAmount.toFixed(2)}
-                
-                We look forward to hosting you!
-                
-                Best regards,
-                Restaurant Booking Team
-            `;
+Dear ${guestDetails.primaryGuest.name},
+
+Your booking has been confirmed!
+
+BOOKING DETAILS:
+- Booking ID: ${booking.bookingId}
+- Room: ${booking.room.name} (${booking.room.type}) #${booking.room.roomNumber}
+- Check-in Date: ${checkIn.toDateString()}
+- Check-out Date: ${checkOut.toDateString()}
+- Number of Nights: ${nights}
+- Total Guests: ${guestDetails.totalAdults} Adult(s), ${guestDetails.totalChildren} Child(ren)
+
+CONTACT INFORMATION:
+- Name: ${guestDetails.primaryGuest.name}
+- Email: ${guestDetails.primaryGuest.email}
+- Phone: ${guestDetails.primaryGuest.phone}
+${guestDetails.additionalGuests && guestDetails.additionalGuests.length > 0 ? `\nAdditional Guests:\n${guestDetails.additionalGuests.map(g => `- ${g.name}`).join('\n')}` : ''}
+
+PRICING BREAKDOWN:
+- Room Rate (${nights} nights): ₹${roomPrice.toFixed(2)}${menuItemsText}${extraServicesText}
+- Subtotal: ₹${subtotal.toFixed(2)}
+- GST (18%): ₹${gst.toFixed(2)}
+- TOTAL AMOUNT: ₹${totalAmount.toFixed(2)}
+
+PAYMENT METHOD: ${guestDetails.primaryGuest.paymentMethod || 'Cash'}
+${specialRequests ? `\nSPECIAL REQUESTS:\n${specialRequests}` : ''}
+
+We look forward to hosting you at our luxury restaurant!
+
+If you need to cancel or modify your booking, please contact us at info@luxuryrestaurant.com or call +1 (555) 123-4567.
+
+Best regards,
+Luxury Restaurant Booking Team
+`;
 
       await sendEmail({
         email: guestDetails.primaryGuest.email,
@@ -219,7 +254,8 @@ const getBookings = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const bookings = await Booking.find(query)
-      .populate("room", "name type roomNumber images")
+      .populate("room", "_id id name type roomNumber images")
+      .populate("pricing.menuItems.item", "name price")
       .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
@@ -239,6 +275,51 @@ const getBookings = async (req, res) => {
     });
   } catch (error) {
     console.error("Get bookings error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
+  }
+};
+
+// @desc    Get all bookings for admin
+// @route   GET /api/bookings/admin/all
+// @access  Private/Admin
+const getAllBookings = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10 } = req.query;
+
+    let query = {};
+
+    if (status) {
+      query.status = status;
+    }
+
+    const skip = (page - 1) * limit;
+
+    const bookings = await Booking.find(query)
+      .populate("user", "name email phone")
+      .populate("room", "_id id name type roomNumber images")
+      .populate("pricing.menuItems.item", "name price")
+      .sort({ createdAt: -1 })
+      .limit(Number(limit))
+      .skip(skip);
+
+    const total = await Booking.countDocuments(query);
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      total,
+      pagination: {
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil(total / limit),
+      },
+      data: bookings,
+    });
+  } catch (error) {
+    console.error("Get all bookings error:", error);
     res.status(500).json({
       success: false,
       message: "Server Error",
@@ -613,6 +694,7 @@ const checkOutBooking = async (req, res) => {
 module.exports = {
   createBooking,
   getBookings,
+  getAllBookings,
   getBooking,
   updateBooking,
   cancelBooking,
