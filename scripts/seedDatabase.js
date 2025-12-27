@@ -5,7 +5,6 @@ require('dotenv').config();
 // Import models
 const User = require('../models/User');
 const Room = require('../models/Room');
-const MenuItem = require('../models/MenuItem');
 const LoyaltyProgram = require('../models/LoyaltyProgram');
 const Discount = require('../models/Discount');
 
@@ -181,115 +180,6 @@ const seedRooms = async () => {
   }
 };
 
-const seedMenuItems = async () => {
-  try {
-    // Clear existing menu items
-    await MenuItem.deleteMany({});
-
-    const menuItems = [
-      {
-        name: 'Grilled Salmon',
-        description: 'Fresh Atlantic salmon grilled to perfection with herbs and lemon',
-        price: 850,
-        category: 'Main Course',
-        cuisine: 'Continental',
-        isVegetarian: false,
-        isVegan: false,
-        allergens: ['Fish'],
-        nutritionalInfo: {
-          calories: 350,
-          protein: 45,
-          carbs: 5,
-          fat: 18
-        },
-        preparationTime: 25,
-        isAvailable: true,
-        images: ['salmon.jpg']
-      },
-      {
-        name: 'Margherita Pizza',
-        description: 'Classic pizza with fresh mozzarella, tomatoes, and basil',
-        price: 650,
-        category: 'Main Course',
-        cuisine: 'Italian',
-        isVegetarian: true,
-        isVegan: false,
-        allergens: ['Gluten', 'Dairy'],
-        nutritionalInfo: {
-          calories: 280,
-          protein: 12,
-          carbs: 35,
-          fat: 10
-        },
-        preparationTime: 15,
-        isAvailable: true,
-        images: ['pizza.jpg']
-      },
-      {
-        name: 'Caesar Salad',
-        description: 'Crisp romaine lettuce with parmesan cheese, croutons, and Caesar dressing',
-        price: 450,
-        category: 'Appetizer',
-        cuisine: 'Continental',
-        isVegetarian: true,
-        isVegan: false,
-        allergens: ['Dairy', 'Eggs'],
-        nutritionalInfo: {
-          calories: 180,
-          protein: 8,
-          carbs: 12,
-          fat: 14
-        },
-        preparationTime: 10,
-        isAvailable: true,
-        images: ['caesar-salad.jpg']
-      },
-      {
-        name: 'Chocolate Lava Cake',
-        description: 'Warm chocolate cake with molten center, served with vanilla ice cream',
-        price: 350,
-        category: 'Dessert',
-        cuisine: 'Continental',
-        isVegetarian: true,
-        isVegan: false,
-        allergens: ['Gluten', 'Dairy', 'Eggs'],
-        nutritionalInfo: {
-          calories: 420,
-          protein: 6,
-          carbs: 45,
-          fat: 25
-        },
-        preparationTime: 20,
-        isAvailable: true,
-        images: ['lava-cake.jpg']
-      },
-      {
-        name: 'Fresh Orange Juice',
-        description: 'Freshly squeezed orange juice',
-        price: 180,
-        category: 'Beverage',
-        cuisine: 'Universal',
-        isVegetarian: true,
-        isVegan: true,
-        allergens: [],
-        nutritionalInfo: {
-          calories: 110,
-          protein: 2,
-          carbs: 26,
-          fat: 0
-        },
-        preparationTime: 5,
-        isAvailable: true,
-        images: ['orange-juice.jpg']
-      }
-    ];
-
-    await MenuItem.insertMany(menuItems);
-    console.log('✅ Menu items seeded successfully');
-  } catch (error) {
-    console.error('❌ Error seeding menu items:', error.message);
-  }
-};
 
 const seedLoyaltyProgram = async () => {
   try {
@@ -457,7 +347,6 @@ const seedDatabase = async () => {
     
     await seedUsers();
     await seedRooms();
-    await seedMenuItems();
     await seedLoyaltyProgram();
     await seedDiscounts();
     

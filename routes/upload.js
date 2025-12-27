@@ -1,13 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { protect, authorize } = require('../middleware/auth');
-const { uploadRoom, uploadMenu, uploadAvatar: uploadAvatarMiddleware } = require('../middleware/upload');
+const { uploadRoom, uploadAvatar: uploadAvatarMiddleware } = require('../middleware/upload');
 const {
   uploadRoomImages,
   deleteRoomImage,
   setPrimaryRoomImage,
-  uploadMenuImage,
-  deleteMenuImage,
   uploadAvatar,
   deleteAvatar
 } = require('../controllers/uploadController');
@@ -45,39 +43,6 @@ router.post('/room-images', protect, authorize('admin'), uploadRoom.array('image
 router.post('/room/:id', protect, authorize('admin'), uploadRoom.array('images', 5), uploadRoomImages);
 router.delete('/room/:roomId/image/:imageId', protect, authorize('admin'), deleteRoomImage);
 router.put('/room/:roomId/image/:imageId/primary', protect, authorize('admin'), setPrimaryRoomImage);
-
-// Menu image routes
-router.post('/menu-images', protect, authorize('admin'), uploadMenu.array('images', 5), (req, res) => {
-  try {
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No files uploaded'
-      });
-    }
-
-    const images = req.files.map((file, index) => ({
-      url: `/uploads/menu/${file.filename}`,
-      filename: file.filename,
-      altText: `Menu Item Image ${index + 1}`,
-      isPrimary: index === 0
-    }));
-
-    res.status(200).json({
-      success: true,
-      message: 'Images uploaded successfully',
-      data: { images }
-    });
-  } catch (error) {
-    console.error('Upload menu images error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to upload images'
-    });
-  }
-});
-router.post('/menu/:id', protect, authorize('admin'), uploadMenu.single('image'), uploadMenuImage);
-router.delete('/menu/:id/image', protect, authorize('admin'), deleteMenuImage);
 
 // Avatar routes
 router.post('/avatar', protect, uploadAvatarMiddleware.single('avatar'), uploadAvatar);

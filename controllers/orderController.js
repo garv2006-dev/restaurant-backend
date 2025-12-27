@@ -26,7 +26,6 @@ const createOrder = async (req, res) => {
     }
 
     const normalizedItems = items.map((item) => ({
-      menuItem: item.id || item.menuItem,
       name: item.name,
       price: Number(item.price) || 0,
       quantity: Number(item.quantity) || 1,
@@ -198,8 +197,7 @@ const getUserOrders = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const orders = await Order.find(query)
-      .populate('items.menuItem', 'name price images')
-      .sort({ createdAt: -1 })
+            .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
 
@@ -233,7 +231,7 @@ const getOrder = async (req, res) => {
   try {
     const order = await Order.findById(req.params.id)
       .populate('user', 'name email')
-      .populate('items.menuItem', 'name price images description');
+      ;
 
     if (!order) {
       return res.status(404).json({

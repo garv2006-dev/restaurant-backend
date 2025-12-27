@@ -24,7 +24,6 @@ const createBooking = async (req, res) => {
       specialRequests,
       preferences,
       extraServices,
-      menuItems,
       paymentDetails,
     } = req.body;
 
@@ -62,12 +61,6 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Add menu items cost
-    if (menuItems && menuItems.length > 0) {
-      menuItems.forEach((item) => {
-        subtotal += item.price * item.quantity;
-      });
-    }
 
     // Calculate taxes (18% GST)
     const gst = subtotal * 0.18;
@@ -86,7 +79,6 @@ const createBooking = async (req, res) => {
       pricing: {
         roomPrice,
         extraServices: extraServices || [],
-        menuItems: menuItems || [],
         subtotal,
         taxes: { gst },
         totalAmount,
@@ -138,14 +130,6 @@ const createBooking = async (req, res) => {
 
     // Send confirmation email
     try {
-      // Build menu items list for email
-      let menuItemsText = '';
-      if (menuItems && menuItems.length > 0) {
-        menuItemsText = '\n\nMenu Items Ordered:\n';
-        menuItems.forEach((item) => {
-          menuItemsText += `- ${item.name} × ${item.quantity} = ₹${(item.price * item.quantity).toFixed(2)}\n`;
-        });
-      }
 
       // Build extra services list for email
       let extraServicesText = '';
@@ -176,7 +160,7 @@ CONTACT INFORMATION:
 ${guestDetails.additionalGuests && guestDetails.additionalGuests.length > 0 ? `\nAdditional Guests:\n${guestDetails.additionalGuests.map(g => `- ${g.name}`).join('\n')}` : ''}
 
 PRICING BREAKDOWN:
-- Room Rate (${nights} nights): ₹${roomPrice.toFixed(2)}${menuItemsText}${extraServicesText}
+- Room Rate (${nights} nights): ₹${roomPrice.toFixed(2)}${extraServicesText}
 - Subtotal: ₹${subtotal.toFixed(2)}
 - GST (18%): ₹${gst.toFixed(2)}
 - TOTAL AMOUNT: ₹${totalAmount.toFixed(2)}
@@ -263,8 +247,7 @@ const getBookings = async (req, res) => {
 
     const bookings = await Booking.find(query)
       .populate("room", "_id id name type roomNumber images")
-      .populate("pricing.menuItems.item", "name price")
-      .sort({ createdAt: -1 })
+            .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
 
@@ -308,8 +291,7 @@ const getAllBookings = async (req, res) => {
     const bookings = await Booking.find(query)
       .populate("user", "name email phone")
       .populate("room", "_id id name type roomNumber images")
-      .populate("pricing.menuItems.item", "name price")
-      .sort({ createdAt: -1 })
+            .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
 
@@ -343,7 +325,7 @@ const getBooking = async (req, res) => {
     const booking = await Booking.findById(req.params.id)
       .populate("user", "name email phone")
       .populate("room", "name type roomNumber images amenities features")
-      .populate("pricing.menuItems.item", "name price");
+      ;
 
     if (!booking) {
       return res.status(404).json({
@@ -402,7 +384,7 @@ const updateBooking = async (req, res) => {
     const allowedUpdates = ["specialRequests", "preferences"];
 
     if (booking.status === "Pending") {
-      allowedUpdates.push("guestDetails", "extraServices", "menuItems");
+      allowedUpdates.push("guestDetails", "extraServices");
     }
 
     const updates = {};
@@ -413,7 +395,7 @@ const updateBooking = async (req, res) => {
     });
 
     // Recalculate pricing if services or menu items are updated
-    if (updates.extraServices || updates.menuItems) {
+    if (updates.extraServices) {
       const room = await Room.findById(booking.room);
       let subtotal = booking.pricing.roomPrice;
 
@@ -424,11 +406,6 @@ const updateBooking = async (req, res) => {
         });
       }
 
-      if (updates.menuItems) {
-        updates.menuItems.forEach((item) => {
-          subtotal += item.price * item.quantity;
-        });
-      }
 
       const gst = subtotal * 0.18;
       updates["pricing.subtotal"] = subtotal;

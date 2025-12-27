@@ -461,18 +461,6 @@ const generateInvoice = async (req, res) => {
             });
         }
 
-        // Add menu items
-        if (payment.booking.pricing.menuItems.length > 0) {
-            payment.booking.pricing.menuItems.forEach(item => {
-                invoiceData.items.push({
-                    description: `Food item - ${item.item.name}`,
-                    quantity: item.quantity,
-                    price: item.price,
-                    total: item.price * item.quantity
-                });
-            });
-        }
-
         res.status(200).json({
             success: true,
             data: invoiceData
