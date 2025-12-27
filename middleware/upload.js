@@ -14,38 +14,8 @@ const createUploadDirs = () => {
 
 createUploadDirs();
 
-// Room images storage configuration
-const roomStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/rooms/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `room-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
-// Menu images storage configuration
-const menuStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/menu/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `menu-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
-
-// Avatar storage configuration
-const avatarStorage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/avatars/');
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, `avatar-${req.user.id}-${uniqueSuffix}${path.extname(file.originalname)}`);
-  }
-});
+// Use memory storage for Cloudinary uploads
+const memoryStorage = multer.memoryStorage();
 
 // File filter function - allow only jpg, jpeg, png
 const fileFilter = (req, file, cb) => {
@@ -60,7 +30,7 @@ const fileFilter = (req, file, cb) => {
 
 // Upload configurations
 const uploadRoom = multer({
-  storage: roomStorage,
+  storage: memoryStorage,
   limits: {
     fileSize: 1024 * 1024 * 5 // 5MB limit
   },
@@ -68,7 +38,7 @@ const uploadRoom = multer({
 });
 
 const uploadMenu = multer({
-  storage: menuStorage,
+  storage: memoryStorage,
   limits: {
     fileSize: 1024 * 1024 * 5 // 5MB limit
   },
@@ -76,7 +46,7 @@ const uploadMenu = multer({
 });
 
 const uploadAvatar = multer({
-  storage: avatarStorage,
+  storage: memoryStorage,
   limits: {
     fileSize: 1024 * 1024 * 2 // 2MB limit for avatars
   },
@@ -85,15 +55,7 @@ const uploadAvatar = multer({
 
 // Generic upload middleware
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, 'uploads/');
-    },
-    filename: function (req, file, cb) {
-      const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-      cb(null, `${file.fieldname}-${uniqueSuffix}${path.extname(file.originalname)}`);
-    }
-  }),
+  storage: memoryStorage,
   limits: {
     fileSize: 1024 * 1024 * 10 // 10MB limit
   },

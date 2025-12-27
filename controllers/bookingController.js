@@ -9,6 +9,7 @@ const {
   emitBookingStatusChange,
   emitUserNotification,
 } = require("../config/socket");
+const { createRoomBookingNotification, createPaymentNotification } = require("./notificationController");
 
 // @desc    Create booking
 // @route   POST /api/bookings
@@ -221,8 +222,15 @@ Luxury Restaurant Booking Team
         type: "success",
         bookingId: booking.bookingId,
       });
-    } catch (socketError) {
-      console.error("Socket notification error:", socketError);
+
+      // Create notification in database
+      await createRoomBookingNotification(
+        req.user.id,
+        { booking, room: booking.room, status: booking.status },
+        booking.status === 'Confirmed' ? 'confirmed' : 'created'
+      );
+    } catch (notificationError) {
+      console.error("Notification creation error:", notificationError);
     }
 
     res.status(201).json({
@@ -543,14 +551,15 @@ const cancelBooking = async (req, res) => {
         type: "warning",
         bookingId: booking.bookingId,
       });
-      res.status(200).json({
-        success: true,
-        data: {
-          message: "Booking cancelled successfully",
-        },
-      });
-    } catch (socketError) {
-      console.error("Socket notification error:", socketError);
+
+      // Create notification in database
+      await createRoomBookingNotification(
+        booking.user.toString(),
+        { booking, room: await Room.findById(booking.room), status: 'Cancelled' },
+        req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
+      );
+    } catch (notificationError) {
+      console.error("Notification creation error:", notificationError);
     }
 
     res.status(200).json({

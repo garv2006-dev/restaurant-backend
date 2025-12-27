@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
+const { initializeSocket } = require('./config/socket');
 
 // Route imports
 const authRoutes = require('./routes/auth');
@@ -27,6 +28,7 @@ const loyaltyRoutes = require('./routes/loyalty');
 const discountRoutes = require('./routes/discounts');
 const uploadRoutes = require('./routes/upload');
 const customerRoutes = require('./routes/customerRoutes');
+const notificationRoutes = require('./routes/notifications');
 
 const app = express();
 
@@ -150,6 +152,7 @@ app.use('/api/loyalty', loyaltyRoutes);
 app.use('/api/discounts', discountRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/customers', customerRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // 404 handler
 // app.use((req, res, next) => {
