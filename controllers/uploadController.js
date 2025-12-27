@@ -1,8 +1,7 @@
 const Room = require('../models/Room');
 const MenuItem = require('../models/MenuItem');
 const User = require('../models/User');
-const fs = require('fs');
-const path = require('path');
+const cloudinary = require('../utils/cloudinary');
 
 // @desc    Upload room images
 // @route   POST /api/upload/room/:id
@@ -26,22 +25,39 @@ const uploadRoomImages = async (req, res) => {
       });
     }
 
-    // Process uploaded images
-    const images = req.files.map((file, index) => ({
-      url: `/uploads/rooms/${file.filename}`,
-      altText: `${room.name} - Image ${index + 1}`,
-      isPrimary: index === 0 && room.images.length === 0
-    }));
+    // Upload images to Cloudinary
+    const uploadedImages = [];
+
+    for (let index = 0; index < req.files.length; index++) {
+      const file = req.files[index];
+      const result = await cloudinary.uploadRoomImage(file.buffer, room._id.toString());
+
+      uploadedImages.push({
+        url: result.secure_url,
+        altText: `${room.name} - Image ${index + 1}`,
+        isPrimary: false
+      });
+    }
+
+    // If any new images were uploaded, make the first new one primary
+    // and clear any existing primary flags so the latest Cloudinary image shows on cards.
+    if (uploadedImages.length > 0) {
+      room.images.forEach((img) => {
+        img.isPrimary = false;
+      });
+
+      uploadedImages[0].isPrimary = true;
+    }
 
     // Add new images to room
-    room.images.push(...images);
+    room.images.push(...uploadedImages);
     await room.save();
 
     res.status(200).json({
       success: true,
       message: 'Images uploaded successfully',
       data: {
-        images: images,
+        images: uploadedImages,
         totalImages: room.images.length
       }
     });
@@ -80,11 +96,12 @@ const deleteRoomImage = async (req, res) => {
     }
 
     const image = room.images[imageIndex];
-    const imagePath = path.join(__dirname, '..', image.url);
-    
-    // Delete file from filesystem
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
+
+    // Delete image from Cloudinary (ignore errors so DB cleanup still happens)
+    try {
+      await cloudinary.deleteRoomImage(image.url);
+    } catch (cloudinaryError) {
+      console.error('Cloudinary delete room image error:', cloudinaryError);
     }
 
     // Remove image from room
@@ -180,16 +197,20 @@ const uploadMenuImage = async (req, res) => {
       });
     }
 
-    // Delete old image if exists
+    // Upload new image to Cloudinary
+    const uploadResult = await cloudinary.uploadMenuImage(req.file.buffer, menuItem._id.toString());
+
+    // Delete old image from Cloudinary if exists
     if (menuItem.image) {
-      const oldImagePath = path.join(__dirname, '..', menuItem.image);
-      if (fs.existsSync(oldImagePath)) {
-        fs.unlinkSync(oldImagePath);
+      try {
+        await cloudinary.deleteMenuImage(menuItem.image);
+      } catch (cloudinaryError) {
+        console.error('Cloudinary delete menu image error:', cloudinaryError);
       }
     }
 
-    // Update menu item with new image
-    menuItem.image = `/uploads/menu/${req.file.filename}`;
+    // Update menu item with new Cloudinary URL
+    menuItem.image = uploadResult.secure_url;
     await menuItem.save();
 
     res.status(200).json({
@@ -231,10 +252,11 @@ const deleteMenuImage = async (req, res) => {
       });
     }
 
-    // Delete file from filesystem
-    const imagePath = path.join(__dirname, '..', menuItem.image);
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
+    // Delete image from Cloudinary (ignore errors so DB cleanup still happens)
+    try {
+      await cloudinary.deleteMenuImage(menuItem.image);
+    } catch (cloudinaryError) {
+      console.error('Cloudinary delete menu image error:', cloudinaryError);
     }
 
     // Remove image from menu item
@@ -269,23 +291,27 @@ const uploadAvatar = async (req, res) => {
       });
     }
 
-    // Delete old avatar if exists and not default
+    // Delete old avatar from Cloudinary if exists and not default
     if (user.avatar && user.avatar !== 'avatar-default.png') {
-      const oldAvatarPath = path.join(__dirname, '..', 'uploads/avatars', user.avatar);
-      if (fs.existsSync(oldAvatarPath)) {
-        fs.unlinkSync(oldAvatarPath);
+      try {
+        await cloudinary.deleteAvatar(user.avatar);
+      } catch (cloudinaryError) {
+        console.error('Cloudinary delete avatar error:', cloudinaryError);
       }
     }
 
-    // Update user with new avatar
-    user.avatar = req.file.filename;
+    // Upload new avatar to Cloudinary
+    const uploadResult = await cloudinary.uploadAvatar(req.file.buffer, user._id.toString());
+
+    // Update user with new avatar URL
+    user.avatar = uploadResult.secure_url;
     await user.save();
 
     res.status(200).json({
       success: true,
       message: 'Avatar uploaded successfully',
       data: {
-        avatarUrl: `/uploads/avatars/${user.avatar}`
+        avatarUrl: user.avatar
       }
     });
 
@@ -312,10 +338,11 @@ const deleteAvatar = async (req, res) => {
       });
     }
 
-    // Delete file from filesystem
-    const avatarPath = path.join(__dirname, '..', 'uploads/avatars', user.avatar);
-    if (fs.existsSync(avatarPath)) {
-      fs.unlinkSync(avatarPath);
+    // Delete avatar from Cloudinary (ignore errors so DB cleanup still happens)
+    try {
+      await cloudinary.deleteAvatar(user.avatar);
+    } catch (cloudinaryError) {
+      console.error('Cloudinary delete avatar error:', cloudinaryError);
     }
 
     // Reset to default avatar

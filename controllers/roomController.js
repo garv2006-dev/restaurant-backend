@@ -1,5 +1,6 @@
 const Room = require('../models/Room');
 const Booking = require('../models/Booking');
+const cloudinary = require('../utils/cloudinary');
 
 // @desc    Get all rooms
 // @route   GET /api/rooms
@@ -201,25 +202,37 @@ const createRoom = async (req, res) => {
         body.price = parseIfJson(body.price);
         body.features = parseIfJson(body.features);
 
-        // Map uploaded files (if any) to images array
+        // First create the room without handling images so we can use its ID for Cloudinary naming
+        let room = await Room.create(body);
+
+        // If files were uploaded, upload them to Cloudinary and attach to the room
         if (req.files && req.files.length > 0) {
-            body.images = req.files.map((file, index) => ({
-                url: `/uploads/rooms/${file.filename}`,
-                altText: `${body.name || 'Room'} - Image ${index + 1}`,
-                isPrimary: index === 0
-            }));
+            const uploadedImages = [];
+
+            for (let index = 0; index < req.files.length; index++) {
+                const file = req.files[index];
+                const result = await cloudinary.uploadRoomImage(file.buffer, room._id.toString());
+
+                uploadedImages.push({
+                    url: result.secure_url,
+                    altText: `${body.name || 'Room'} - Image ${index + 1}`,
+                    isPrimary: index === 0
+                });
+            }
+
+            room.images = uploadedImages;
+            await room.save();
         }
 
-        // If no images were uploaded, ensure there is at least one placeholder image
-        if (!body.images || body.images.length === 0) {
-            body.images = [{
+        // If still no images, ensure there is at least one placeholder image
+        if (!room.images || room.images.length === 0) {
+            room.images = [{
                 url: 'https://via.placeholder.com/400x250?text=Room+Image',
                 altText: `${body.name || 'Room'} - Image`,
                 isPrimary: true
             }];
+            await room.save();
         }
-
-        const room = await Room.create(body);
 
         res.status(201).json({
             success: true,
@@ -228,7 +241,7 @@ const createRoom = async (req, res) => {
 
     } catch (error) {
         console.error('Create room error:', error);
-        
+
         if (error.code === 11000) {
             return res.status(400).json({
                 success: false,
