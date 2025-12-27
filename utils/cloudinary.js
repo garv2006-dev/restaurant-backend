@@ -99,22 +99,6 @@ const uploadRoomImage = async (fileBuffer, roomId, options = {}) => {
   });
 };
 
-/**
- * Upload menu item images to Cloudinary
- * @param {Buffer} fileBuffer - Image file buffer
- * @param {String} menuItemId - Menu item ID for naming
- * @param {Object} options - Additional upload options
- * @returns {Promise<Object>} Upload result
- */
-const uploadMenuImage = async (fileBuffer, menuItemId, options = {}) => {
-  const folderPath = 'Restaurant/menu';
-  const filename = `menu-${menuItemId}-${Date.now()}`;
-  
-  return uploadToCloudinary(fileBuffer, folderPath, {
-    public_id: filename,
-    ...options
-  });
-};
 
 /**
  * Upload user avatar to Cloudinary
@@ -146,18 +130,6 @@ const deleteRoomImage = async (roomImageUrl) => {
   return deleteFromCloudinary(publicId, 'image');
 };
 
-/**
- * Delete menu image from Cloudinary
- * @param {String} menuImageUrl - Image URL
- * @returns {Promise<Object>} Deletion result
- */
-const deleteMenuImage = async (menuImageUrl) => {
-  const publicId = getPublicIdFromUrl(menuImageUrl);
-  if (!publicId) {
-    throw new Error('Invalid image URL');
-  }
-  return deleteFromCloudinary(publicId, 'image');
-};
 
 /**
  * Delete user avatar from Cloudinary
@@ -177,9 +149,7 @@ module.exports = {
   deleteFromCloudinary,
   getPublicIdFromUrl,
   uploadRoomImage,
-  uploadMenuImage,
   uploadAvatar,
   deleteRoomImage,
-  deleteMenuImage,
   deleteAvatar
 };

@@ -83,22 +83,6 @@ const BookingSchema = new mongoose.Schema({
                 default: 1
             }
         }],
-        menuItems: [{
-            item: {
-                type: mongoose.Schema.ObjectId,
-                ref: 'MenuItem'
-            },
-            quantity: {
-                type: Number,
-                required: true,
-                min: 1
-            },
-            price: {
-                type: Number,
-                required: true
-            },
-            scheduledFor: Date
-        }],
         subtotal: {
             type: Number,
             required: true
@@ -275,11 +259,6 @@ BookingSchema.methods.calculateTotalAmount = function() {
     // Add extra services
     this.pricing.extraServices.forEach(service => {
         subtotal += service.price * service.quantity;
-    });
-    
-    // Add menu items
-    this.pricing.menuItems.forEach(item => {
-        subtotal += item.price * item.quantity;
     });
     
     this.pricing.subtotal = subtotal;

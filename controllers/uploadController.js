@@ -1,5 +1,4 @@
 const Room = require('../models/Room');
-const MenuItem = require('../models/MenuItem');
 const User = require('../models/User');
 const cloudinary = require('../utils/cloudinary');
 
@@ -175,108 +174,6 @@ const setPrimaryRoomImage = async (req, res) => {
   }
 };
 
-// @desc    Upload menu item image
-// @route   POST /api/upload/menu/:id
-// @access  Private/Admin
-const uploadMenuImage = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const menuItem = await MenuItem.findById(id);
-    
-    if (!menuItem) {
-      return res.status(404).json({
-        success: false,
-        message: 'Menu item not found'
-      });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({
-        success: false,
-        message: 'No file uploaded'
-      });
-    }
-
-    // Upload new image to Cloudinary
-    const uploadResult = await cloudinary.uploadMenuImage(req.file.buffer, menuItem._id.toString());
-
-    // Delete old image from Cloudinary if exists
-    if (menuItem.image) {
-      try {
-        await cloudinary.deleteMenuImage(menuItem.image);
-      } catch (cloudinaryError) {
-        console.error('Cloudinary delete menu image error:', cloudinaryError);
-      }
-    }
-
-    // Update menu item with new Cloudinary URL
-    menuItem.image = uploadResult.secure_url;
-    await menuItem.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Image uploaded successfully',
-      data: {
-        imageUrl: menuItem.image
-      }
-    });
-
-  } catch (error) {
-    console.error('Upload menu image error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server Error'
-    });
-  }
-};
-
-// @desc    Delete menu item image
-// @route   DELETE /api/upload/menu/:id/image
-// @access  Private/Admin
-const deleteMenuImage = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const menuItem = await MenuItem.findById(id);
-    
-    if (!menuItem) {
-      return res.status(404).json({
-        success: false,
-        message: 'Menu item not found'
-      });
-    }
-
-    if (!menuItem.image) {
-      return res.status(400).json({
-        success: false,
-        message: 'No image to delete'
-      });
-    }
-
-    // Delete image from Cloudinary (ignore errors so DB cleanup still happens)
-    try {
-      await cloudinary.deleteMenuImage(menuItem.image);
-    } catch (cloudinaryError) {
-      console.error('Cloudinary delete menu image error:', cloudinaryError);
-    }
-
-    // Remove image from menu item
-    menuItem.image = null;
-    await menuItem.save();
-
-    res.status(200).json({
-      success: true,
-      message: 'Image deleted successfully'
-    });
-
-  } catch (error) {
-    console.error('Delete menu image error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Server Error'
-    });
-  }
-};
-
 // @desc    Upload user avatar
 // @route   POST /api/upload/avatar
 // @access  Private
@@ -367,8 +264,6 @@ module.exports = {
   uploadRoomImages,
   deleteRoomImage,
   setPrimaryRoomImage,
-  uploadMenuImage,
-  deleteMenuImage,
   uploadAvatar,
   deleteAvatar
 };

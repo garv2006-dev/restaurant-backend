@@ -1,16 +1,15 @@
 const Review = require('../models/Review');
 const Booking = require('../models/Booking');
 const Room = require('../models/Room');
-const MenuItem = require('../models/MenuItem');
 
 // @desc    Create review
 // @route   POST /api/reviews
 // @access  Private
 const createReview = async (req, res) => {
     try {
-        const { booking, room, menuItem, rating, title, comment, reviewType } = req.body;
+        const { booking, room, rating, title, comment, reviewType } = req.body;
         
-        console.log('Creating review with data:', { booking, room, menuItem, rating, title, comment, reviewType });
+        console.log('Creating review with data:', { booking, room, rating, title, comment, reviewType });
 
         // Verify booking belongs to user and is completed
         if (booking) {
@@ -35,8 +34,7 @@ const createReview = async (req, res) => {
             user: req.user.id,
             ...(booking && { booking }),
             ...(room && { room }),
-            ...(menuItem && { menuItem })
-        });
+                    });
 
         if (existingReview) {
             return res.status(400).json({
@@ -49,7 +47,6 @@ const createReview = async (req, res) => {
             user: req.user.id,
             booking,
             room,
-            menuItem,
             rating,
             title,
             comment,
@@ -59,18 +56,12 @@ const createReview = async (req, res) => {
         await review.populate([
             { path: 'user', select: 'name avatar' },
             { path: 'room', select: 'name type' },
-            { path: 'menuItem', select: 'name' }
         ]);
 
         // Update average rating
         if (room) {
             const roomData = await Room.findById(room);
             await roomData.updateAverageRating();
-        }
-
-        if (menuItem) {
-            const menuItemData = await MenuItem.findById(menuItem);
-            await menuItemData.updateAverageRating();
         }
 
         res.status(201).json({
@@ -103,20 +94,18 @@ const createReview = async (req, res) => {
 // @access  Public
 const getReviews = async (req, res) => {
     try {
-        const { room, menuItem, rating, page = 1, limit = 10 } = req.query;
+        const { room, rating, page = 1, limit = 10 } = req.query;
         
         let query = { isApproved: true };
 
         if (room) query.room = room;
-        if (menuItem) query.menuItem = menuItem;
-        if (rating) query.rating = { $gte: Number(rating) };
+                if (rating) query.rating = { $gte: Number(rating) };
 
         const skip = (page - 1) * limit;
 
         const reviews = await Review.find(query)
             .populate('user', 'name avatar')
             .populate('room', 'name type')
-            .populate('menuItem', 'name')
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
@@ -154,7 +143,6 @@ const getMyReviews = async (req, res) => {
 
         const reviews = await Review.find({ user: req.user.id })
             .populate('room', 'name type')
-            .populate('menuItem', 'name')
             .populate('booking', 'bookingId')
             .sort({ createdAt: -1 })
             .limit(Number(limit))
@@ -214,19 +202,13 @@ const updateReview = async (req, res) => {
             }
         ).populate([
             { path: 'user', select: 'name avatar' },
-            { path: 'room', select: 'name type' },
-            { path: 'menuItem', select: 'name' }
+            { path: 'room', select: 'name type' }
         ]);
 
         // Update average ratings
         if (review.room) {
             const room = await Room.findById(review.room._id);
             await room.updateAverageRating();
-        }
-
-        if (review.menuItem) {
-            const menuItem = await MenuItem.findById(review.menuItem._id);
-            await menuItem.updateAverageRating();
         }
 
         res.status(200).json({
@@ -271,11 +253,6 @@ const deleteReview = async (req, res) => {
         if (review.room) {
             const room = await Room.findById(review.room);
             await room.updateAverageRating();
-        }
-
-        if (review.menuItem) {
-            const menuItem = await MenuItem.findById(review.menuItem);
-            await menuItem.updateAverageRating();
         }
 
         res.status(200).json({
@@ -340,8 +317,7 @@ const getPendingReviews = async (req, res) => {
         const reviews = await Review.find({ isApproved: false })
             .populate('user', 'name email')
             .populate('room', 'name type')
-            .populate('menuItem', 'name')
-            .sort({ createdAt: -1 })
+                        .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
 

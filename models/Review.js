@@ -15,13 +15,9 @@ const ReviewSchema = new mongoose.Schema({
         type: mongoose.Schema.ObjectId,
         ref: 'Room'
     },
-    menuItem: {
-        type: mongoose.Schema.ObjectId,
-        ref: 'MenuItem'
-    },
     reviewType: {
         type: String,
-        enum: ['room', 'menuItem', 'service', 'overall'],
+        enum: ['room', 'service', 'overall'],
         required: true
     },
     rating: {
@@ -67,22 +63,6 @@ const ReviewSchema = new mongoose.Schema({
             max: 5
         },
         amenities: {
-            type: Number,
-            min: 1,
-            max: 5
-        },
-        // For menu items
-        taste: {
-            type: Number,
-            min: 1,
-            max: 5
-        },
-        presentation: {
-            type: Number,
-            min: 1,
-            max: 5
-        },
-        portion: {
             type: Number,
             min: 1,
             max: 5
@@ -176,23 +156,14 @@ const ReviewSchema = new mongoose.Schema({
 // Compound indexes
 ReviewSchema.index({ user: 1, booking: 1 }, { unique: true }); // One review per user per booking
 ReviewSchema.index({ room: 1, isApproved: 1 });
-ReviewSchema.index({ menuItem: 1, isApproved: 1 });
 ReviewSchema.index({ rating: -1 });
 ReviewSchema.index({ createdAt: -1 });
 ReviewSchema.index({ reviewType: 1 });
 
-// Validation: Room or MenuItem must be specified based on reviewType
+// Validation: Room must be specified
 ReviewSchema.pre('save', function(next) {
-    if (this.reviewType === 'room' || this.reviewType === 'service' || this.reviewType === 'overall') {
-        if (!this.room) {
-            return next(new Error('Room is required for room/service/overall reviews'));
-        }
-    }
-    
-    if (this.reviewType === 'menuItem') {
-        if (!this.menuItem) {
-            return next(new Error('Menu item is required for menu item reviews'));
-        }
+    if (!this.room) {
+        return next(new Error('Room is required'));
     }
     
     next();
@@ -271,7 +242,6 @@ ReviewSchema.statics.getFilteredReviews = function(filters = {}) {
     let query = { isApproved: true, 'flags.isHidden': false };
     
     if (filters.room) query.room = filters.room;
-    if (filters.menuItem) query.menuItem = filters.menuItem;
     if (filters.reviewType) query.reviewType = filters.reviewType;
     if (filters.rating) query.rating = filters.rating;
     if (filters.visitType) query.visitType = filters.visitType;
@@ -300,8 +270,7 @@ ReviewSchema.statics.getFilteredReviews = function(filters = {}) {
     return this.find(query)
         .populate('user', 'name avatar')
         .populate('room', 'name type')
-        .populate('menuItem', 'name category')
-        .sort(sortBy);
+                .sort(sortBy);
 };
 
 // Update related models when review is approved
@@ -313,14 +282,6 @@ ReviewSchema.post('save', async function() {
                 const room = await Room.findById(this.room);
                 if (room) {
                     await room.updateAverageRating();
-                }
-            }
-            
-            if (this.menuItem) {
-                const MenuItem = mongoose.model('MenuItem');
-                const menuItem = await MenuItem.findById(this.menuItem);
-                if (menuItem) {
-                    await menuItem.updateAverageRating();
                 }
             }
         } catch (error) {

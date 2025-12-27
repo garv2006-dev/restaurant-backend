@@ -70,10 +70,6 @@ const discountSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Room'
   }],
-  applicableToMenuItems: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'MenuItem'
-  }],
   userTierRestrictions: [{
     type: String,
     enum: ['bronze', 'silver', 'gold', 'platinum']

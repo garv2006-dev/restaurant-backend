@@ -4,7 +4,7 @@ const fs = require('fs');
 
 // Create upload directories if they don't exist
 const createUploadDirs = () => {
-  const dirs = ['uploads/rooms', 'uploads/menu', 'uploads/avatars'];
+  const dirs = ['uploads/rooms', 'uploads/avatars'];
   dirs.forEach(dir => {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -37,14 +37,6 @@ const uploadRoom = multer({
   fileFilter: fileFilter
 });
 
-const uploadMenu = multer({
-  storage: memoryStorage,
-  limits: {
-    fileSize: 1024 * 1024 * 5 // 5MB limit
-  },
-  fileFilter: fileFilter
-});
-
 const uploadAvatar = multer({
   storage: memoryStorage,
   limits: {
@@ -64,7 +56,6 @@ const upload = multer({
 
 module.exports = {
   uploadRoom,
-  uploadMenu,
   uploadAvatar,
   upload
 };

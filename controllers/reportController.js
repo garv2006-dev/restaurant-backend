@@ -2,7 +2,6 @@ const Booking = require('../models/Booking');
 const Room = require('../models/Room');
 const User = require('../models/User');
 const Review = require('../models/Review');
-const MenuItem = require('../models/MenuItem');
 const mongoose = require('mongoose');
 
 // @desc    Get comprehensive analytics report
@@ -288,125 +287,25 @@ const getRevenueAnalytics = async (startDate, endDate) => {
       $group: {
         _id: null,
         totalRevenue: { $sum: '$pricing.totalAmount' },
-        roomRevenue: { $sum: '$pricing.roomPrice' },
-        menuRevenue: {
-          $sum: {
-            $reduce: {
-              input: '$pricing.menuItems',
-              initialValue: 0,
-              in: { $add: ['$$value', { $multiply: ['$$this.price', '$$this.quantity'] }] }
-            }
-          }
-        },
-        extraServicesRevenue: {
-          $sum: {
-            $reduce: {
-              input: '$pricing.extraServices',
-              initialValue: 0,
-              in: { $add: ['$$value', { $multiply: ['$$this.price', '$$this.quantity'] }] }
-            }
-          }
-        }
+        roomRevenue: { $sum: '$pricing.roomPrice' }
       }
     }
   ]);
 
   const breakdown = revenueBreakdown[0] || {
     totalRevenue: 0,
-    roomRevenue: 0,
-    menuRevenue: 0,
-    extraServicesRevenue: 0
+    roomRevenue: 0
   };
 
   return {
     totalRevenue: breakdown.totalRevenue,
     roomRevenue: breakdown.roomRevenue,
-    menuRevenue: breakdown.menuRevenue,
-    extraServicesRevenue: breakdown.extraServicesRevenue,
     monthlyRevenue
   };
 };
 
 // Helper function for performance analytics
 const getPerformanceAnalytics = async (startDate, endDate) => {
-  // Top performing rooms
-  const topRooms = await Booking.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: startDate, $lte: endDate },
-        status: { $ne: 'Cancelled' }
-      }
-    },
-    {
-      $lookup: {
-        from: 'rooms',
-        localField: 'room',
-        foreignField: '_id',
-        as: 'roomInfo'
-      }
-    },
-    {
-      $unwind: '$roomInfo'
-    },
-    {
-      $group: {
-        _id: '$room',
-        roomName: { $first: '$roomInfo.name' },
-        bookings: { $sum: 1 },
-        revenue: { $sum: '$pricing.totalAmount' }
-      }
-    },
-    {
-      $sort: { revenue: -1 }
-    },
-    {
-      $limit: 5
-    },
-    {
-      $project: {
-        roomName: 1,
-        bookings: 1,
-        revenue: 1,
-        _id: 0
-      }
-    }
-  ]);
-
-  // Top menu items
-  const topMenuItems = await Booking.aggregate([
-    {
-      $match: {
-        createdAt: { $gte: startDate, $lte: endDate },
-        status: { $ne: 'Cancelled' },
-        'pricing.menuItems': { $exists: true, $ne: [] }
-      }
-    },
-    {
-      $unwind: '$pricing.menuItems'
-    },
-    {
-      $group: {
-        _id: '$pricing.menuItems.name',
-        orders: { $sum: '$pricing.menuItems.quantity' },
-        revenue: { $sum: { $multiply: ['$pricing.menuItems.price', '$pricing.menuItems.quantity'] } }
-      }
-    },
-    {
-      $sort: { revenue: -1 }
-    },
-    {
-      $limit: 5
-    },
-    {
-      $project: {
-        itemName: '$_id',
-        orders: 1,
-        revenue: 1,
-        _id: 0
-      }
-    }
-  ]);
-
   // Customer satisfaction
   const reviewStats = await Review.aggregate([
     {
@@ -427,8 +326,6 @@ const getPerformanceAnalytics = async (startDate, endDate) => {
   const customerSatisfaction = reviewData.averageRating > 0 ? (reviewData.averageRating / 5 * 100).toFixed(1) : 0;
 
   return {
-    topRooms,
-    topMenuItems,
     customerSatisfaction: parseFloat(customerSatisfaction),
     averageRating: reviewData.averageRating || 0
   };

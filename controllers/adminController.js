@@ -3,7 +3,6 @@ const Room = require('../models/Room');
 const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const Review = require('../models/Review');
-const MenuItem = require('../models/MenuItem');
 const Order = require('../models/Order');
 
 // @desc    Get admin dashboard stats
