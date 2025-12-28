@@ -250,11 +250,14 @@ const updateBookingStatus = async (req, res) => {
         booking.status = status;
 
         // Update room status based on booking status
-        if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
+        if (status === 'Confirmed' && oldStatus === 'Pending') {
+            // Mark room as reserved when booking is confirmed
+            await Room.findByIdAndUpdate(booking.room, { status: 'Available' }); // Keep as available until check-in
+        } else if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
             await Room.findByIdAndUpdate(booking.room, { status: 'Occupied' });
         } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
             await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
-        } else if (status === 'Cancelled') {
+        } else if (status === 'Cancelled' || status === 'NoShow') {
             await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
         }
 
@@ -307,7 +310,7 @@ const updateBookingStatus = async (req, res) => {
                     
                     <p style="margin-top: 30px; color: #666;">
                         Best regards,<br>
-                        <strong>Shemaroo Bollywood Restaurant & Rooms Team</strong>
+                        <strong>Luxury Hotel & Rooms Team</strong>
                     </p>
                 `;
             } else if (status === 'Cancelled') {
@@ -315,7 +318,7 @@ const updateBookingStatus = async (req, res) => {
                 emailMessage = `
                     <p>Dear ${guestName},</p>
                     
-                    <p>We regret to inform you that your booking could not be confirmed at this time.</p>
+                    <p>We regret to inform you that your booking has been cancelled.</p>
                     
                     <h4 style="color: #dc3545; margin-top: 20px;">Booking Details:</h4>
                     <ul style="list-style: none; padding-left: 0;">
@@ -326,15 +329,98 @@ const updateBookingStatus = async (req, res) => {
                     </ul>
                     
                     <p style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;">
-                        <strong style="color: #721c24;">✗ Unfortunately, the room is not available</strong> 
-                        for your selected dates. We apologize for the inconvenience.
+                        <strong style="color: #721c24;">✗ Your booking has been cancelled.</strong> 
+                        We apologize for any inconvenience caused.
                     </p>
                     
-                    <p>Please try booking for different dates or consider our other available rooms. We would be happy to help you find an alternative.</p>
+                    <p>If you have any questions or would like to make a new booking, please contact us.</p>
                     
                     <p style="margin-top: 30px; color: #666;">
                         Best regards,<br>
-                        <strong>Shemaroo Bollywood Restaurant & Rooms Team</strong>
+                        <strong>Luxury Hotel & Rooms Team</strong>
+                    </p>
+                `;
+            } else if (status === 'CheckedIn' && oldStatus === 'Confirmed') {
+                emailSubject = `Welcome! Check-in Confirmed - ${booking.bookingId}`;
+                emailMessage = `
+                    <p>Dear ${guestName},</p>
+                    
+                    <p>Welcome to our hotel! You have been successfully checked in.</p>
+                    
+                    <h4 style="color: #17a2b8; margin-top: 20px;">Check-in Details:</h4>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
+                        <li><strong>Room:</strong> ${roomName}</li>
+                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
+                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
+                    </ul>
+                    
+                    <p style="background-color: #d1ecf1; padding: 15px; border-left: 4px solid #17a2b8; margin: 20px 0;">
+                        <strong style="color: #0c5460;">✓ You are now checked in!</strong> 
+                        Enjoy your stay with us. If you need anything, please don't hesitate to contact our front desk.
+                    </p>
+                    
+                    <p>We hope you have a wonderful stay!</p>
+                    
+                    <p style="margin-top: 30px; color: #666;">
+                        Best regards,<br>
+                        <strong>Luxury Hotel & Rooms Team</strong>
+                    </p>
+                `;
+            } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
+                emailSubject = `Thank You! Check-out Completed - ${booking.bookingId}`;
+                emailMessage = `
+                    <p>Dear ${guestName},</p>
+                    
+                    <p>Thank you for staying with us! You have been successfully checked out.</p>
+                    
+                    <h4 style="color: #6c757d; margin-top: 20px;">Check-out Details:</h4>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
+                        <li><strong>Room:</strong> ${roomName}</li>
+                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
+                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
+                    </ul>
+                    
+                    <p style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #6c757d; margin: 20px 0;">
+                        <strong style="color: #495057;">✓ Check-out completed successfully!</strong> 
+                        We hope you enjoyed your stay with us.
+                    </p>
+                    
+                    <p>We would love to hear about your experience. Please consider leaving us a review!</p>
+                    
+                    <p>We look forward to welcoming you back soon.</p>
+                    
+                    <p style="margin-top: 30px; color: #666;">
+                        Best regards,<br>
+                        <strong>Luxury Hotel & Rooms Team</strong>
+                    </p>
+                `;
+            } else if (status === 'NoShow') {
+                emailSubject = `No Show - ${booking.bookingId}`;
+                emailMessage = `
+                    <p>Dear ${guestName},</p>
+                    
+                    <p>We noticed that you did not arrive for your scheduled check-in.</p>
+                    
+                    <h4 style="color: #dc3545; margin-top: 20px;">Booking Details:</h4>
+                    <ul style="list-style: none; padding-left: 0;">
+                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
+                        <li><strong>Room:</strong> ${roomName}</li>
+                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
+                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
+                    </ul>
+                    
+                    <p style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;">
+                        <strong style="color: #721c24;">Your booking has been marked as No Show.</strong> 
+                        If this was due to unforeseen circumstances, please contact us.
+                    </p>
+                    
+                    <p>If you still plan to arrive, please contact us immediately to check availability.</p>
+                    
+                    <p style="margin-top: 30px; color: #666;">
+                        Best regards,<br>
+                        <strong>Luxury Hotel & Rooms Team</strong>
                     </p>
                 `;
             }
@@ -795,9 +881,9 @@ const getSystemSettings = async (req, res) => {
         // For now, returning default settings
         const settings = {
             general: {
-                siteName: 'Restaurant Booking System',
+                siteName: 'Hotel Booking System',
                 siteUrl: process.env.FRONTEND_URL,
-                contactEmail: 'admin@restaurant-booking.com',
+                contactEmail: 'admin@hotel-booking.com',
                 timezone: 'UTC'
             },
             booking: {

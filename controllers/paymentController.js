@@ -197,7 +197,7 @@ const confirmPayment = async (req, res) => {
                 Your booking is now confirmed. We look forward to hosting you!
                 
                 Best regards,
-                Restaurant Booking Team
+                Hotel Booking Team
             `;
 
             await sendEmail({

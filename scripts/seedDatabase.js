@@ -10,7 +10,7 @@ const Discount = require('../models/Discount');
 
 const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/restaurant_booking');
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/hotel_booking');
     console.log('✅ MongoDB Connected for seeding');
   } catch (error) {
     console.error('❌ Database connection error:', error.message);
@@ -26,7 +26,7 @@ const seedUsers = async () => {
     const users = [
       {
         name: 'Admin User',
-        email: 'admin@restaurant.com',
+        email: 'admin@hotel.com',
         phone: '+1234567890',
         password: 'Admin123!',
         role: 'admin',
@@ -353,7 +353,7 @@ const seedDatabase = async () => {
     console.log('🎉 Database seeding completed successfully!');
     console.log('');
     console.log('👨‍💼 Admin Credentials:');
-    console.log('   Email: admin@restaurant.com');
+    console.log('   Email: admin@hotel.com');
     console.log('   Password: Admin123!');
     console.log('');
     console.log('👥 Staff Credentials:');

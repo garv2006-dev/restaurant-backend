@@ -110,7 +110,7 @@ const createOrder = async (req, res) => {
         We hope you enjoy your meal!
         
         Best regards,
-        Restaurant Team
+        Hotel Team
       `;
 
       await sendEmail({

@@ -1,7 +1,7 @@
-# Restaurant Booking System - Backend API
+# Hotel Booking System - Backend API
 
 ## Overview
-This is the backend API for the Restaurant Room Booking and Management System built with Node.js, Express.js, and MongoDB.
+This is the backend API for the Hotel Room Booking and Management System built with Node.js, Express.js, and MongoDB.
 
 ## Features Implemented
 - ✅ JWT-based Authentication & Authorization
@@ -25,8 +25,8 @@ This is the backend API for the Restaurant Room Booking and Management System bu
 
 1. **Clone the repository** (if not already done):
 ```bash
-git clone https://github.com/your-username/restaurant-booking-system.git
-cd restaurant-booking-system/backend
+git clone https://github.com/your-username/hotel-booking-system.git
+cd hotel-booking-system/backend
 ```
 
 2. **Install dependencies**:
