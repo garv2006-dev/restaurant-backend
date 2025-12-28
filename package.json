@@ -1,7 +1,7 @@
 {
-  "name": "restaurant-booking-backend",
+  "name": "hotel-booking-backend",
   "version": "1.0.0",
-  "description": "Backend API for Restaurant Room Booking and Management System",
+  "description": "Backend API for Hotel Room Booking and Management System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -19,7 +19,7 @@
     "express",
     "mongodb"
   ],
-  "author": "Restaurant Booking Team",
+  "author": "Hotel Booking Team",
   "license": "MIT",
   "dependencies": {
     "bcryptjs": "^3.0.2",

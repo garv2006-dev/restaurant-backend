@@ -168,12 +168,12 @@ PRICING BREAKDOWN:
 PAYMENT METHOD: ${guestDetails.primaryGuest.paymentMethod || 'Cash'}
 ${specialRequests ? `\nSPECIAL REQUESTS:\n${specialRequests}` : ''}
 
-We look forward to hosting you at our luxury restaurant!
+We look forward to hosting you at our luxury hotel!
 
-If you need to cancel or modify your booking, please contact us at info@luxuryrestaurant.com or call +1 (555) 123-4567.
+If you need to cancel or modify your booking, please contact us at info@luxuryhotel.com or call +1 (555) 123-4567.
 
 Best regards,
-Luxury Restaurant Booking Team
+Luxury Hotel Booking Team
 `;
 
       await sendEmail({
@@ -502,7 +502,7 @@ const cancelBooking = async (req, res) => {
                 }
                 
                 Best regards,
-                Restaurant Booking Team
+                Hotel Booking Team
             `;
 
       await sendEmail({

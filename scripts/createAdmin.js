@@ -7,7 +7,7 @@ const User = require('../models/User');
   try {
     await connectDB();
 
-    const email = process.env.ADMIN_EMAIL || 'admin@restaurant.com';
+    const email = process.env.ADMIN_EMAIL || 'admin@hotel.com';
     const password = process.env.ADMIN_PASSWORD || 'Admin@123';
     const phone = process.env.ADMIN_PHONE || '9999999999';
 
