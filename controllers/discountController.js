@@ -1,5 +1,6 @@
 const Discount = require('../models/Discount');
 const User = require('../models/User');
+const { validateFirstTimeDiscount } = require('../services/firstTimeUserService');
 
 // @desc    Get all active discounts
 // @route   GET /api/discounts
@@ -69,6 +70,15 @@ exports.validateDiscount = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'You have already used this discount code or are not eligible'
+      });
+    }
+
+    // Additional validation for first-time user discounts
+    const firstTimeValidation = await validateFirstTimeDiscount(req.user.id, code);
+    if (!firstTimeValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: firstTimeValidation.message
       });
     }
 
@@ -150,6 +160,15 @@ exports.applyDiscount = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Discount is not applicable'
+      });
+    }
+
+    // Additional validation for first-time user discounts
+    const firstTimeValidation = await validateFirstTimeDiscount(req.user.id, discount.code);
+    if (!firstTimeValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: firstTimeValidation.message
       });
     }
 

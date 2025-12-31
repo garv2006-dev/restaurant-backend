@@ -2,7 +2,9 @@ const Booking = require("../models/Booking");
 const Room = require("../models/Room");
 const User = require("../models/User");
 const Payment = require("../models/Payment");
+const Discount = require("../models/Discount");
 const sendEmail = require("../utils/sendEmail");
+const { generateBookingConfirmationEmail, generateCancellationEmail } = require("../utils/emailTemplates");
 const { awardPointsForBooking } = require("./loyaltyController");
 const {
   emitNewBooking,
@@ -11,6 +13,119 @@ const {
 } = require("../config/socket");
 const { createRoomBookingNotification, createPaymentNotification } = require("./notificationController");
 
+// @desc    Validate discount code for booking
+// @route   POST /api/bookings/validate-discount
+// @access  Private
+const validateDiscountForBooking = async (req, res) => {
+  try {
+    const { discountCode, subtotal } = req.body;
+    
+    if (!discountCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Discount code is required'
+      });
+    }
+
+    if (!subtotal || subtotal <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid subtotal is required'
+      });
+    }
+
+    // Find discount by code
+    const discount = await Discount.findOne({ 
+      code: discountCode.toUpperCase(),
+      isActive: true 
+    });
+
+    if (!discount) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid discount code'
+      });
+    }
+
+    // Check if discount is currently valid
+    const now = new Date();
+    if (!discount.isActive || discount.validFrom > now || discount.validUntil < now) {
+      return res.status(400).json({
+        success: false,
+        message: 'Discount code has expired or is not active'
+      });
+    }
+
+    // Check usage limits
+    if (discount.usageLimit.total !== null && discount.usageCount >= discount.usageLimit.total) {
+      return res.status(400).json({
+        success: false,
+        message: 'Discount code has reached its usage limit'
+      });
+    }
+
+    // Check if user can use this discount
+    if (!discount.canUserUse(req.user.id)) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already used this discount code or are not eligible'
+      });
+    }
+
+    // Check minimum order amount
+    if (subtotal < discount.minimumOrderAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum booking amount of ₹${discount.minimumOrderAmount} required`
+      });
+    }
+
+    // Check maximum order amount
+    if (discount.maximumOrderAmount && subtotal > discount.maximumOrderAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum booking amount of ₹${discount.maximumOrderAmount} exceeded`
+      });
+    }
+
+    // Calculate discount amount
+    const discountAmount = discount.calculateDiscount(subtotal);
+    
+    if (discountAmount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Discount is not applicable to this booking'
+      });
+    }
+
+    // Ensure final amount is not negative
+    const finalAmount = Math.max(0, subtotal - discountAmount);
+
+    res.status(200).json({
+      success: true,
+      message: 'Discount code is valid',
+      data: {
+        discount: {
+          id: discount._id,
+          code: discount.code,
+          name: discount.name,
+          description: discount.description,
+          type: discount.type,
+          value: discount.value
+        },
+        discountAmount,
+        finalAmount,
+        savings: discountAmount
+      }
+    });
+  } catch (error) {
+    console.error('Error validating discount for booking:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while validating discount'
+    });
+  }
+};
 // @desc    Create booking
 // @route   POST /api/bookings
 // @access  Private
@@ -25,6 +140,7 @@ const createBooking = async (req, res) => {
       preferences,
       extraServices,
       paymentDetails,
+      discountCode, // New field for discount
     } = req.body;
 
     // Find room
@@ -61,12 +177,98 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // Handle discount application
+    let appliedDiscount = null;
+    let discountAmount = 0;
+    
+    if (discountCode) {
+      try {
+        // Find and validate discount
+        const discount = await Discount.findOne({ 
+          code: discountCode.toUpperCase(),
+          isActive: true 
+        });
 
-    // Calculate taxes (18% GST)
-    const gst = subtotal * 0.18;
-    const totalAmount = subtotal + gst;
+        if (!discount) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid discount code",
+          });
+        }
 
-    // Create booking with proper payment method handling
+        // Validate discount eligibility
+        const now = new Date();
+        if (discount.validFrom > now || discount.validUntil < now) {
+          return res.status(400).json({
+            success: false,
+            message: "Discount code has expired",
+          });
+        }
+
+        if (discount.usageLimit.total !== null && discount.usageCount >= discount.usageLimit.total) {
+          return res.status(400).json({
+            success: false,
+            message: "Discount code has reached its usage limit",
+          });
+        }
+
+        if (!discount.canUserUse(req.user.id)) {
+          return res.status(400).json({
+            success: false,
+            message: "You have already used this discount code or are not eligible",
+          });
+        }
+
+        if (subtotal < discount.minimumOrderAmount) {
+          return res.status(400).json({
+            success: false,
+            message: `Minimum booking amount of ₹${discount.minimumOrderAmount} required`,
+          });
+        }
+
+        if (discount.maximumOrderAmount && subtotal > discount.maximumOrderAmount) {
+          return res.status(400).json({
+            success: false,
+            message: `Maximum booking amount of ₹${discount.maximumOrderAmount} exceeded`,
+          });
+        }
+
+        // Calculate discount
+        discountAmount = discount.calculateDiscount(subtotal);
+        
+        if (discountAmount > 0) {
+          appliedDiscount = {
+            discountId: discount._id,
+            code: discount.code,
+            name: discount.name,
+            type: discount.type,
+            value: discount.value,
+            amount: discountAmount
+          };
+        }
+      } catch (discountError) {
+        console.error('Discount validation error:', discountError);
+        return res.status(400).json({
+          success: false,
+          message: "Error applying discount code",
+        });
+      }
+    }
+
+    // Calculate final amounts
+    const subtotalAfterDiscount = subtotal - discountAmount;
+    const gst = subtotalAfterDiscount * 0.18;
+    const totalAmount = subtotalAfterDiscount + gst;
+
+    // Ensure total amount is not negative
+    if (totalAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking amount after discount",
+      });
+    }
+
+    // Create booking with discount information
     const booking = await Booking.create({
       user: req.user.id,
       room: roomId,
@@ -80,6 +282,15 @@ const createBooking = async (req, res) => {
         roomPrice,
         extraServices: extraServices || [],
         subtotal,
+        discount: appliedDiscount ? {
+          couponCode: appliedDiscount.code,
+          amount: discountAmount,
+          percentage: appliedDiscount.type === 'percentage' ? appliedDiscount.value : 0
+        } : {
+          couponCode: null,
+          amount: 0,
+          percentage: 0
+        },
         taxes: { gst },
         totalAmount,
       },
@@ -92,6 +303,26 @@ const createBooking = async (req, res) => {
         paymentDate: paymentDetails?.method !== "Cash" ? new Date() : null,
       },
     });
+
+    // If discount was applied, record its usage
+    if (appliedDiscount) {
+      try {
+        const discount = await Discount.findById(appliedDiscount.discountId);
+        if (discount) {
+          discount.usedBy.push({
+            user: req.user.id,
+            usedAt: new Date(),
+            orderAmount: subtotal,
+            discountAmount: discountAmount
+          });
+          discount.usageCount += 1;
+          await discount.save();
+        }
+      } catch (discountUpdateError) {
+        console.error('Error updating discount usage:', discountUpdateError);
+        // Continue with booking creation even if discount update fails
+      }
+    }
 
     // Create payment record automatically
     let payment = null;
@@ -130,17 +361,22 @@ const createBooking = async (req, res) => {
 
     // Send confirmation email
     try {
+      const htmlMessage = generateBookingConfirmationEmail(
+        booking, 
+        guestDetails, 
+        checkIn, 
+        checkOut, 
+        nights, 
+        roomPrice, 
+        subtotal, 
+        gst, 
+        totalAmount, 
+        extraServices, 
+        specialRequests, 
+        paymentDetails
+      );
 
-      // Build extra services list for email
-      let extraServicesText = '';
-      if (extraServices && extraServices.length > 0) {
-        extraServicesText = '\n\nExtra Services:\n';
-        extraServices.forEach((service) => {
-          extraServicesText += `- ${service.name} × ${service.quantity} = ₹${(service.price * service.quantity).toFixed(2)}\n`;
-        });
-      }
-
-      const emailMessage = `
+      const plainTextMessage = `
 Dear ${guestDetails.primaryGuest.name},
 
 Your booking has been confirmed!
@@ -160,26 +396,27 @@ CONTACT INFORMATION:
 ${guestDetails.additionalGuests && guestDetails.additionalGuests.length > 0 ? `\nAdditional Guests:\n${guestDetails.additionalGuests.map(g => `- ${g.name}`).join('\n')}` : ''}
 
 PRICING BREAKDOWN:
-- Room Rate (${nights} nights): ₹${roomPrice.toFixed(2)}${extraServicesText}
+- Room Rate (${nights} nights): ₹${roomPrice.toFixed(2)}${extraServices && extraServices.length > 0 ? `\nExtra Services:\n${extraServices.map(service => `- ${service.name} × ${service.quantity} = ₹${(service.price * service.quantity).toFixed(2)}`).join('\n')}` : ''}
 - Subtotal: ₹${subtotal.toFixed(2)}
 - GST (18%): ₹${gst.toFixed(2)}
 - TOTAL AMOUNT: ₹${totalAmount.toFixed(2)}
 
-PAYMENT METHOD: ${guestDetails.primaryGuest.paymentMethod || 'Cash'}
+PAYMENT METHOD: ${paymentDetails?.method || 'Cash'}
 ${specialRequests ? `\nSPECIAL REQUESTS:\n${specialRequests}` : ''}
 
 We look forward to hosting you at our luxury hotel!
 
-If you need to cancel or modify your booking, please contact us at info@luxuryhotel.com or call +1 (555) 123-4567.
+If you need to cancel or modify your booking, please contact us at concierge@luxuryhotel.com or call +1 (555) 123-4567.
 
 Best regards,
 Luxury Hotel Booking Team
-`;
+      `;
 
       await sendEmail({
         email: guestDetails.primaryGuest.email,
-        subject: `Booking Confirmation - ${booking.bookingId}`,
-        message: emailMessage,
+        subject: `🎉 Booking Confirmed - ${booking.bookingId} | Luxury Hotel`,
+        message: plainTextMessage,
+        html: htmlMessage,
       });
     } catch (emailError) {
       console.error("Email sending error:", emailError);
@@ -201,8 +438,8 @@ Luxury Hotel Booking Team
 
       // Send notification to user
       emitUserNotification(req.user.id, {
-        title: "Booking Confirmed!",
-        message: `Your booking ${booking.bookingId} has been confirmed for ${booking.room.name}`,
+        title: "🏨 Booking Created Successfully!",
+        message: `Your booking ${booking.bookingId} has been created and is ${booking.status === 'Confirmed' ? 'confirmed' : 'pending confirmation'}`,
         type: "success",
         bookingId: booking.bookingId,
       });
@@ -211,7 +448,7 @@ Luxury Hotel Booking Team
       await createRoomBookingNotification(
         req.user.id,
         { booking, room: booking.room, status: booking.status },
-        booking.status === 'Confirmed' ? 'confirmed' : 'created'
+        booking.status === 'Confirmed' ? 'confirmed_by_admin' : 'created'
       );
     } catch (notificationError) {
       console.error("Notification creation error:", notificationError);
@@ -436,11 +673,31 @@ const updateBooking = async (req, res) => {
 // @access  Private
 const cancelBooking = async (req, res) => {
   try {
+    console.log('Cancel booking request received:', {
+      bookingId: req.params.id,
+      userId: req.user.id,
+      userRole: req.user.role,
+      reason: req.body.reason
+    });
+
     const { reason } = req.body;
 
+    // Validate ObjectId format
+    if (!req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      console.log('Invalid booking ID format:', req.params.id);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid booking ID format",
+      });
+    }
+
     const booking = await Booking.findById(req.params.id);
+    console.log('Found booking:', booking ? 'Yes' : 'No');
+    console.log('Booking status:', booking?.status);
+    console.log('Booking user:', booking?.user?.toString());
 
     if (!booking) {
+      console.log('Booking not found for ID:', req.params.id);
       return res.status(404).json({
         success: false,
         message: "Booking not found",
@@ -449,6 +706,7 @@ const cancelBooking = async (req, res) => {
 
     // Check if user owns this booking or is admin
     if (booking.user.toString() !== req.user.id && req.user.role !== "admin") {
+      console.log('Authorization failed - user does not own booking');
       return res.status(403).json({
         success: false,
         message: "Not authorized to cancel this booking",
@@ -456,7 +714,13 @@ const cancelBooking = async (req, res) => {
     }
 
     // Check if booking can be cancelled
-    if (!booking.canBeCancelled()) {
+    const canCancel = booking.canBeCancelled();
+    console.log('Can cancel booking:', canCancel);
+    console.log('Booking check-in date:', booking.bookingDates.checkInDate);
+    console.log('Current time:', new Date());
+    
+    if (!canCancel) {
+      console.log('Booking cannot be cancelled - status:', booking.status);
       return res.status(400).json({
         success: false,
         message: "Booking cannot be cancelled at this time",
@@ -516,38 +780,62 @@ const cancelBooking = async (req, res) => {
 
     // Emit booking status change notification
     try {
-      emitBookingStatusChange(
-        booking.bookingId,
-        "Cancelled",
-        booking.user.toString()
-      );
+      // Check if socket functions are available
+      if (typeof emitBookingStatusChange === 'function') {
+        emitBookingStatusChange(
+          booking.bookingId,
+          "Cancelled",
+          booking.user.toString()
+        );
+      }
 
-      emitUserNotification(booking.user.toString(), {
-        title: "Booking Cancelled",
-        message: `Your booking ${booking.bookingId} has been cancelled`,
-        type: "warning",
-        bookingId: booking.bookingId,
-      });
+      if (typeof emitUserNotification === 'function') {
+        emitUserNotification(booking.user.toString(), {
+          title: "❌ Booking Cancelled",
+          message: `Your booking ${booking.bookingId} has been cancelled successfully${refundAmount > 0 ? `. Refund of ₹${refundAmount.toFixed(2)} will be processed within 5-7 business days` : ''}`,
+          type: "warning",
+          bookingId: booking.bookingId,
+        });
+      }
 
       // Create notification in database
-      await createRoomBookingNotification(
-        booking.user.toString(),
-        { booking, room: await Room.findById(booking.room), status: 'Cancelled' },
-        req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
-      );
+      const room = await Room.findById(booking.room);
+      if (room && typeof createRoomBookingNotification === 'function') {
+        await createRoomBookingNotification(
+          booking.user.toString(),
+          { booking, room, status: 'Cancelled' },
+          req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
+        );
+      }
+      console.log('Notifications sent successfully');
     } catch (notificationError) {
       console.error("Notification creation error:", notificationError);
+      // Don't fail the request if notification fails
     }
 
+    console.log('Cancel booking completed successfully');
     res.status(200).json({
       success: true,
       data: booking,
+      message: "Booking cancelled successfully"
     });
   } catch (error) {
     console.error("Cancel booking error:", error);
+    console.error("Error stack:", error.stack);
+    
+    // Provide more specific error messages
+    let errorMessage = "Server Error";
+    if (error.name === 'ValidationError') {
+      errorMessage = "Validation Error: " + error.message;
+    } else if (error.name === 'CastError') {
+      errorMessage = "Invalid booking ID format";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     res.status(500).json({
       success: false,
-      message: "Server Error",
+      message: errorMessage,
     });
   }
 };
@@ -559,7 +847,9 @@ const checkInBooking = async (req, res) => {
   try {
     const { identityProof, notes } = req.body;
 
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findById(req.params.id)
+      .populate('room')
+      .populate('user');
 
     if (!booking) {
       return res.status(404).json({
@@ -589,6 +879,47 @@ const checkInBooking = async (req, res) => {
 
     await booking.save();
 
+    // Send check-in confirmation email
+    try {
+      const { generateCheckInEmail } = require("../utils/emailTemplates");
+      const htmlMessage = generateCheckInEmail(booking, booking.checkInDetails);
+
+      const plainTextMessage = `
+Dear ${booking.guestDetails.primaryGuest.name},
+
+Welcome to Luxury Hotel! You have successfully checked in.
+
+CHECK-IN DETAILS:
+- Booking ID: ${booking.bookingId}
+- Check-in Date: ${booking.checkInDetails.actualCheckInTime.toDateString()}
+- Check-in Time: ${booking.checkInDetails.actualCheckInTime.toLocaleTimeString()}
+- Room Number: #${booking.room.roomNumber}
+- Room Type: ${booking.room.type}
+- Check-out Date: ${new Date(booking.bookingDates.checkOutDate).toDateString()}
+
+IMPORTANT INFORMATION:
+- WiFi Network: LuxuryHotel_Guest
+- WiFi Password: Welcome2024
+- Check-out Time: 11:00 AM
+- Concierge: Dial 0 from your room
+- Room Service: Available 24/7 - Dial 1
+
+We hope you enjoy your stay with us!
+
+Best regards,
+Luxury Hotel Team
+      `;
+
+      await sendEmail({
+        email: booking.guestDetails.primaryGuest.email,
+        subject: `🏨 Welcome! Check-In Confirmed - ${booking.bookingId} | Luxury Hotel`,
+        message: plainTextMessage,
+        html: htmlMessage,
+      });
+    } catch (emailError) {
+      console.error("Check-in email sending error:", emailError);
+    }
+
     res.status(200).json({
       success: true,
       data: booking,
@@ -609,7 +940,9 @@ const checkOutBooking = async (req, res) => {
   try {
     const { roomCondition, additionalCharges, notes } = req.body;
 
-    const booking = await Booking.findById(req.params.id);
+    const booking = await Booking.findById(req.params.id)
+      .populate('room')
+      .populate('user');
 
     if (!booking) {
       return res.status(404).json({
@@ -664,6 +997,61 @@ const checkOutBooking = async (req, res) => {
 
     await booking.save();
 
+    // Send check-out confirmation email
+    try {
+      const { generateCheckOutEmail } = require("../utils/emailTemplates");
+      const htmlMessage = generateCheckOutEmail(booking, booking.checkOutDetails);
+
+      const additionalChargesText = additionalCharges && additionalCharges.length > 0 
+        ? `\nADDITIONAL CHARGES:\n${additionalCharges.map(charge => `- ${charge.type}: ${charge.description} - ₹${charge.amount.toFixed(2)}`).join('\n')}`
+        : '';
+
+      const additionalTotal = additionalCharges ? additionalCharges.reduce((sum, charge) => sum + charge.amount, 0) : 0;
+      const finalTotal = booking.pricing.totalAmount;
+
+      const plainTextMessage = `
+Dear ${booking.guestDetails.primaryGuest.name},
+
+Thank you for staying with Luxury Hotel! Your check-out has been processed successfully.
+
+CHECK-OUT DETAILS:
+- Booking ID: ${booking.bookingId}
+- Check-out Date: ${booking.checkOutDetails.actualCheckOutTime.toDateString()}
+- Check-out Time: ${booking.checkOutDetails.actualCheckOutTime.toLocaleTimeString()}
+- Room Number: #${booking.room.roomNumber}
+- Room Type: ${booking.room.type}
+- Total Nights: ${booking.bookingDates.nights}
+
+FINAL BILL SUMMARY:
+- Original Stay Amount: ₹${(finalTotal - additionalTotal).toFixed(2)}${additionalTotal > 0 ? `\n- Additional Charges: ₹${additionalTotal.toFixed(2)}` : ''}
+- Final Total: ₹${finalTotal.toFixed(2)}
+- Payment Status: ${booking.paymentStatus}${additionalChargesText}
+
+RECEIPT INFORMATION:
+This email serves as your official check-out receipt.
+For any billing inquiries, please contact our accounting department.
+
+WE VALUE YOUR FEEDBACK:
+Please take a moment to share your experience with us.
+- Review us on: Google, TripAdvisor, or our website
+- Email feedback: feedback@luxuryhotel.com
+
+Thank you for choosing Luxury Hotel. We look forward to welcoming you back!
+
+Best regards,
+Luxury Hotel Team
+      `;
+
+      await sendEmail({
+        email: booking.guestDetails.primaryGuest.email,
+        subject: `🏁 Check-Out Complete - Thank You! ${booking.bookingId} | Luxury Hotel`,
+        message: plainTextMessage,
+        html: htmlMessage,
+      });
+    } catch (emailError) {
+      console.error("Check-out email sending error:", emailError);
+    }
+
     res.status(200).json({
       success: true,
       data: booking,
@@ -678,6 +1066,7 @@ const checkOutBooking = async (req, res) => {
 };
 
 module.exports = {
+  validateDiscountForBooking,
   createBooking,
   getBookings,
   getAllBookings,

@@ -6,6 +6,7 @@ const { protect, authorize } = require('../middleware/auth');
 
 // Controllers
 const {
+    validateDiscountForBooking,
     createBooking,
     getBookings,
     getAllBookings,
@@ -23,6 +24,7 @@ router.use(protect);
 router.get('/admin/all', authorize('admin', 'staff'), getAllBookings);
 
 // Customer routes
+router.post('/validate-discount', validateDiscountForBooking);
 router.post('/', createBooking);
 router.get('/', getBookings);
 router.get('/:id', getBooking);

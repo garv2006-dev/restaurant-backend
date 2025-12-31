@@ -438,6 +438,58 @@ const updateBookingStatus = async (req, res) => {
             // Don't fail the request if email fails to send
         }
 
+        // Send in-app notifications
+        try {
+            const { createRoomBookingNotification } = require('./notificationController');
+            const { emitUserNotification } = require('../config/socket');
+            
+            let notificationAction = '';
+            let notificationTitle = '';
+            let notificationMessage = '';
+
+            if (status === 'Confirmed' && oldStatus === 'Pending') {
+                notificationAction = 'confirmed_by_admin';
+                notificationTitle = '✅ Booking Confirmed by Admin';
+                notificationMessage = `Great news! Your booking ${booking.bookingId} has been confirmed by our team.`;
+            } else if (status === 'Cancelled') {
+                notificationAction = 'cancelled_by_admin';
+                notificationTitle = '❌ Booking Cancelled by Admin';
+                notificationMessage = `Your booking ${booking.bookingId} has been cancelled by our administrator.`;
+            } else if (status === 'CheckedIn') {
+                notificationAction = 'checked_in';
+                notificationTitle = '🔑 Check-in Completed';
+                notificationMessage = `Welcome! You have been checked in for booking ${booking.bookingId}.`;
+            } else if (status === 'CheckedOut') {
+                notificationAction = 'checked_out';
+                notificationTitle = '👋 Check-out Completed';
+                notificationMessage = `Thank you for staying with us! Check-out completed for booking ${booking.bookingId}.`;
+            } else if (status === 'NoShow') {
+                notificationAction = 'no_show';
+                notificationTitle = '⏰ No Show Recorded';
+                notificationMessage = `Your booking ${booking.bookingId} has been marked as no-show.`;
+            }
+
+            if (notificationAction) {
+                // Send real-time notification
+                emitUserNotification(booking.user._id || booking.user, {
+                    title: notificationTitle,
+                    message: notificationMessage,
+                    type: status === 'Confirmed' ? 'success' : status === 'Cancelled' || status === 'NoShow' ? 'warning' : 'info',
+                    bookingId: booking.bookingId,
+                });
+
+                // Create database notification
+                await createRoomBookingNotification(
+                    booking.user._id || booking.user,
+                    { booking, room: booking.room, status: status },
+                    notificationAction
+                );
+            }
+        } catch (notificationError) {
+            console.error('Notification creation error:', notificationError);
+            // Don't fail the request if notification fails
+        }
+
         res.status(200).json({
             success: true,
             data: booking

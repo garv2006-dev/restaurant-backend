@@ -207,7 +207,7 @@ RoomSchema.index({ type: 1 });
 RoomSchema.index({ status: 1 });
 RoomSchema.index({ 'price.basePrice': 1 });
 RoomSchema.index({ isActive: 1 });
-RoomSchema.index({ roomNumber: 1 });
+// roomNumber index is already created by unique: true in schema definition
 
 // Method to check if room is available for given dates
 RoomSchema.methods.isAvailableForDates = async function(checkIn, checkOut) {

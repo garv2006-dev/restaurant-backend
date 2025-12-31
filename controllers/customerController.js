@@ -48,6 +48,7 @@ exports.getCustomers = async (req, res) => {
         
         return {
           ...customer.toObject(),
+          id: customer._id, // Add id field for frontend compatibility
           totalBookings: stats.totalBookings,
           totalSpent: stats.totalSpent
         };
@@ -116,6 +117,59 @@ exports.addCustomer = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Server error while adding customer'
+    });
+  }
+};
+
+// @desc    Delete customer
+// @route   DELETE /api/customers/:id
+// @access  Private/Admin
+exports.deleteCustomer = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('Delete customer request received for ID:', id);
+
+    // Find the customer
+    const customer = await User.findById(id);
+    console.log('Found customer:', customer ? customer.name : 'Not found');
+
+    if (!customer) {
+      console.log('Customer not found with ID:', id);
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // Check if customer has any active bookings
+    const activeBookings = await Booking.find({
+      user: id,
+      status: { $in: ['confirmed', 'checked-in'] }
+    });
+
+    console.log('Active bookings found:', activeBookings.length);
+
+    if (activeBookings.length > 0) {
+      console.log('Cannot delete customer with active bookings');
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete customer with active bookings. Please cancel or complete their bookings first.'
+      });
+    }
+
+    // Delete the customer
+    await User.findByIdAndDelete(id);
+    console.log('Customer deleted successfully:', customer.name);
+
+    res.status(200).json({
+      success: true,
+      message: 'Customer deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting customer:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error while deleting customer'
     });
   }
 };
