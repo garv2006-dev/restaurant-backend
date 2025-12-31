@@ -122,6 +122,15 @@ const UserSchema = new mongoose.Schema(
       default: "local",
     },
     photoURL: String,
+    // First-time user discount tracking
+    firstLoginDiscountSent: {
+      type: Boolean,
+      default: false,
+    },
+    firstLoginDiscountSentAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

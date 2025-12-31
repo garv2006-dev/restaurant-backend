@@ -86,6 +86,11 @@ const discountSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isFirstTimeUserDiscount: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

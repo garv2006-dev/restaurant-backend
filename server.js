@@ -169,20 +169,38 @@ const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
 });
 
+// Initialize Socket.io AFTER server starts
+initializeSocket(server);
+console.log('✅ Socket.io initialized');
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {
-    console.log(`Error: ${err.message}`);
-    // Close server & exit process
-    server.close(() => {
-        process.exit(1);
-    });
+    console.error('❌ Unhandled Promise Rejection:', err.message);
+    console.error('Stack:', err.stack);
+    
+    // Don't exit immediately in development
+    if (process.env.NODE_ENV === 'production') {
+        // Close server & exit process in production
+        server.close(() => {
+            process.exit(1);
+        });
+    } else {
+        console.warn('⚠️  Server continuing in development mode despite error');
+    }
 });
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
-    console.log(`Error: ${err.message}`);
-    console.log('Shutting down the server due to uncaught exception');
-    process.exit(1);
+    console.error('❌ Uncaught Exception:', err.message);
+    console.error('Stack:', err.stack);
+    
+    // Don't exit immediately in development
+    if (process.env.NODE_ENV === 'production') {
+        console.error('Shutting down the server due to uncaught exception');
+        process.exit(1);
+    } else {
+        console.warn('⚠️  Server continuing in development mode despite error');
+    }
 });
 
 module.exports = app;

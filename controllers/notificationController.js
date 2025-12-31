@@ -173,36 +173,63 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
 
         switch (action) {
             case 'created':
-                title = 'Room Booking Pending';
-                message = `Your room booking ${booking.bookingId} for ${room.name} is pending confirmation.`;
-                bookingStatus = 'pending';
+                title = '🏨 New Booking Created';
+                message = `Your room booking ${booking.bookingId} for ${room.name} has been created and is pending confirmation.`;
+                bookingStatus = 'Pending';
                 break;
             case 'confirmed':
-                title = 'Room Booking Confirmed';
-                message = `Your room booking ${booking.bookingId} for ${room.name} has been confirmed!`;
-                bookingStatus = 'confirmed';
+            case 'confirmed_by_admin':
+                title = '✅ Booking Confirmed!';
+                message = `Great news! Your room booking ${booking.bookingId} for ${room.name} has been confirmed by our team.`;
+                bookingStatus = 'Confirmed';
                 break;
             case 'cancelled_by_user':
-                title = 'Room Booking Cancelled';
-                message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled.`;
-                bookingStatus = 'cancelled';
+                title = '❌ Booking Cancelled';
+                message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled as requested.`;
+                bookingStatus = 'Cancelled';
                 break;
             case 'cancelled_by_admin':
-                title = 'Room Booking Cancelled by Admin';
-                message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled by the administrator.`;
-                bookingStatus = 'cancelled';
+                title = '⚠️ Booking Cancelled by Admin';
+                message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled by our administrator. Please contact support for details.`;
+                bookingStatus = 'Cancelled';
+                break;
+            case 'checked_in':
+                title = '🔑 Check-in Completed';
+                message = `Welcome! You have successfully checked in for booking ${booking.bookingId} at ${room.name}.`;
+                bookingStatus = 'CheckedIn';
+                break;
+            case 'checked_out':
+                title = '👋 Check-out Completed';
+                message = `Thank you for staying with us! Check-out completed for booking ${booking.bookingId}. We hope you enjoyed your stay.`;
+                bookingStatus = 'CheckedOut';
                 break;
             case 'updated':
-                title = 'Room Booking Updated';
-                message = `Your room booking ${booking.bookingId} details have been updated.`;
+                title = '📝 Booking Updated';
+                message = `Your room booking ${booking.bookingId} details have been updated. Please review the changes.`;
                 bookingStatus = booking.status;
                 break;
+            case 'payment_pending':
+                title = '💳 Payment Required';
+                message = `Payment is required for your booking ${booking.bookingId}. Please complete payment to confirm your reservation.`;
+                bookingStatus = 'Pending';
+                break;
+            case 'payment_completed':
+                title = '✅ Payment Successful';
+                message = `Payment completed successfully for booking ${booking.bookingId}. Your reservation is now confirmed!`;
+                bookingStatus = 'Confirmed';
+                break;
+            case 'no_show':
+                title = '⏰ No Show Recorded';
+                message = `Your booking ${booking.bookingId} has been marked as no-show. Please contact us if this is incorrect.`;
+                bookingStatus = 'NoShow';
+                break;
             default:
-                title = 'Room Booking Update';
+                title = '📢 Booking Update';
                 message = `There is an update regarding your room booking ${booking.bookingId}.`;
                 bookingStatus = booking.status;
         }
 
+        // Create notification with idempotency check
         const notification = await Notification.createRoomBookingNotification({
             userId,
             title,
@@ -212,17 +239,30 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
             roomId: room._id
         });
 
-        // Emit real-time notification
-        try {
-            emitUserNotification(userId, {
-                title,
-                message,
-                type: 'room_booking',
-                bookingId: booking.bookingId,
-                notificationId: notification._id
-            });
-        } catch (socketError) {
-            console.error('Socket notification error:', socketError);
+        // CRITICAL: Only emit socket event if notification was NEWLY created
+        // Check if notification was just created (within last 2 seconds)
+        const isNewNotification = notification.createdAt && 
+            (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
+
+        if (isNewNotification) {
+            // Emit real-time notification ONLY for new notifications
+            try {
+                emitUserNotification(userId, {
+                    title,
+                    message,
+                    type: 'room_booking',
+                    bookingId: booking.bookingId,
+                    notificationId: notification._id,
+                    action: action,
+                    status: bookingStatus,
+                    createdAt: notification.createdAt
+                });
+                console.log(`NEW notification created and emitted for user ${userId}: ${title}`);
+            } catch (socketError) {
+                console.error('Socket notification error:', socketError);
+            }
+        } else {
+            console.log(`Notification already existed for user ${userId}, skipping socket emit`);
         }
 
         return notification;
@@ -251,25 +291,38 @@ const createPaymentNotification = async (userId, bookingData, paymentStatus) => 
             message = `There is an update regarding payment for your booking ${booking.bookingId}.`;
         }
 
+        // Create notification with idempotency check
         const notification = await Notification.createPaymentNotification({
             userId,
             title,
             message,
             relatedRoomBookingId: booking._id,
-            roomId: room._id
+            roomId: room._id,
+            paymentStatus
         });
 
-        // Emit real-time notification
-        try {
-            emitUserNotification(userId, {
-                title,
-                message,
-                type: 'payment',
-                bookingId: booking.bookingId,
-                notificationId: notification._id
-            });
-        } catch (socketError) {
-            console.error('Socket notification error:', socketError);
+        // CRITICAL: Only emit socket event if notification was NEWLY created
+        // Check if notification was just created (within last 2 seconds)
+        const isNewNotification = notification.createdAt && 
+            (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
+
+        if (isNewNotification) {
+            // Emit real-time notification ONLY for new notifications
+            try {
+                emitUserNotification(userId, {
+                    title,
+                    message,
+                    type: 'payment',
+                    bookingId: booking.bookingId,
+                    notificationId: notification._id,
+                    createdAt: notification.createdAt
+                });
+                console.log(`NEW payment notification created and emitted for user ${userId}`);
+            } catch (socketError) {
+                console.error('Socket notification error:', socketError);
+            }
+        } else {
+            console.log(`Payment notification already existed for user ${userId}, skipping socket emit`);
         }
 
         return notification;
@@ -284,7 +337,7 @@ const createPaymentNotification = async (userId, bookingData, paymentStatus) => 
 // @access  Private/Admin
 const createPromotionNotification = async (req, res) => {
     try {
-        const { userIds, title, message } = req.body;
+        const { userIds, title, message, promotionId } = req.body;
 
         if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
             return res.status(400).json({
@@ -301,28 +354,39 @@ const createPromotionNotification = async (req, res) => {
         }
 
         const notifications = [];
+        const newNotifications = [];
         
         for (const userId of userIds) {
             try {
+                // Create notification with idempotency check
                 const notification = await Notification.createPromotionNotification({
                     userId,
                     title,
-                    message
+                    message,
+                    promotionId
                 });
 
-                // Emit real-time notification
-                try {
-                    emitUserNotification(userId, {
-                        title,
-                        message,
-                        type: 'promotion',
-                        notificationId: notification._id
-                    });
-                } catch (socketError) {
-                    console.error('Socket notification error:', socketError);
-                }
-
                 notifications.push(notification);
+
+                // CRITICAL: Only emit socket event if notification was NEWLY created
+                const isNewNotification = notification.createdAt && 
+                    (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
+
+                if (isNewNotification) {
+                    // Emit real-time notification ONLY for new notifications
+                    try {
+                        emitUserNotification(userId, {
+                            title,
+                            message,
+                            type: 'promotion',
+                            notificationId: notification._id,
+                            createdAt: notification.createdAt
+                        });
+                        newNotifications.push(notification);
+                    } catch (socketError) {
+                        console.error('Socket notification error:', socketError);
+                    }
+                }
             } catch (error) {
                 console.error(`Error creating promotion notification for user ${userId}:`, error);
             }
@@ -331,7 +395,7 @@ const createPromotionNotification = async (req, res) => {
         res.status(201).json({
             success: true,
             data: notifications,
-            message: `Promotion notifications sent to ${notifications.length} users`
+            message: `Promotion notifications sent to ${newNotifications.length} new users (${notifications.length} total)`
         });
     } catch (error) {
         console.error('Create promotion notification error:', error);
@@ -347,7 +411,7 @@ const createPromotionNotification = async (req, res) => {
 // @access  Private/Admin
 const createSystemNotification = async (req, res) => {
     try {
-        const { userIds, title, message } = req.body;
+        const { userIds, title, message, systemEventId } = req.body;
 
         if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
             return res.status(400).json({
@@ -364,28 +428,39 @@ const createSystemNotification = async (req, res) => {
         }
 
         const notifications = [];
+        const newNotifications = [];
         
         for (const userId of userIds) {
             try {
+                // Create notification with idempotency check
                 const notification = await Notification.createSystemNotification({
                     userId,
                     title,
-                    message
+                    message,
+                    systemEventId
                 });
 
-                // Emit real-time notification
-                try {
-                    emitUserNotification(userId, {
-                        title,
-                        message,
-                        type: 'system',
-                        notificationId: notification._id
-                    });
-                } catch (socketError) {
-                    console.error('Socket notification error:', socketError);
-                }
-
                 notifications.push(notification);
+
+                // CRITICAL: Only emit socket event if notification was NEWLY created
+                const isNewNotification = notification.createdAt && 
+                    (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
+
+                if (isNewNotification) {
+                    // Emit real-time notification ONLY for new notifications
+                    try {
+                        emitUserNotification(userId, {
+                            title,
+                            message,
+                            type: 'system',
+                            notificationId: notification._id,
+                            createdAt: notification.createdAt
+                        });
+                        newNotifications.push(notification);
+                    } catch (socketError) {
+                        console.error('Socket notification error:', socketError);
+                    }
+                }
             } catch (error) {
                 console.error(`Error creating system notification for user ${userId}:`, error);
             }
@@ -394,7 +469,7 @@ const createSystemNotification = async (req, res) => {
         res.status(201).json({
             success: true,
             data: notifications,
-            message: `System notifications sent to ${notifications.length} users`
+            message: `System notifications sent to ${newNotifications.length} new users (${notifications.length} total)`
         });
     } catch (error) {
         console.error('Create system notification error:', error);

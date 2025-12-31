@@ -3,6 +3,8 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const sendEmail = require('../utils/sendEmail');
+const { generatePasswordResetEmail } = require('../utils/emailTemplates');
+const { sendFirstTimeDiscountNotification } = require('../services/firstTimeUserService');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -62,6 +64,19 @@ const googleLogin = async (req, res, next) => {
         });
 
         if (existingUser) {
+            // Send first-time discount notification for existing users (non-blocking)
+            if (existingUser.role === 'customer') {
+                sendFirstTimeDiscountNotification(existingUser._id.toString())
+                    .then(result => {
+                        if (result.success) {
+                            console.log(`First-time discount sent to user ${existingUser._id}`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Error sending first-time discount:', err);
+                    });
+            }
+            
             const token = existingUser.getSignedJwtToken();
             res.status(201).json({
                 success: true,
@@ -83,6 +98,19 @@ const googleLogin = async (req, res, next) => {
             const user = await User.findOne({
                 email: createdUser?.email
             });
+
+            // Send first-time discount notification for new Google users (non-blocking)
+            if (user && user.role === 'customer') {
+                sendFirstTimeDiscountNotification(user._id.toString())
+                    .then(result => {
+                        if (result.success) {
+                            console.log(`First-time discount sent to new Google user ${user._id}`);
+                        }
+                    })
+                    .catch(err => {
+                        console.error('Error sending first-time discount:', err);
+                    });
+            }
 
             const token = user.getSignedJwtToken();
             res.status(201).json({
@@ -127,6 +155,21 @@ const login = async (req, res, next) => {
         }
         user.lastLogin = Date.now();
         await user.save({ validateBeforeSave: false });
+        
+        // Send first-time discount notification (non-blocking)
+        // This runs asynchronously and doesn't block the login response
+        if (user.role === 'customer') {
+            sendFirstTimeDiscountNotification(user._id.toString())
+                .then(result => {
+                    if (result.success) {
+                        console.log(`First-time discount sent to user ${user._id}`);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error sending first-time discount:', err);
+                });
+        }
+        
         const token = user.getSignedJwtToken();
         res.status(200).json({
             success: true,
@@ -200,40 +243,7 @@ This link will expire in 10 minutes.
 If you did not request this, please ignore this email.
         `;
 
-        const htmlMessage = `
-<!DOCTYPE html>
-<html>
-<head>
-    <style>
-        body { font-family: Arial, sans-serif; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background-color: #f0f0f0; padding: 20px; text-align: center; }
-        .content { padding: 20px; }
-        .button { display: inline-block; background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin: 20px 0; }
-        .footer { background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 12px; color: #666; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Password Reset Request</h1>
-        </div>
-        <div class="content">
-            <p>Hello,</p>
-            <p>You requested to reset your password. Click the button below to proceed:</p>
-            <a href="${resetUrl}" class="button">Reset Password</a>
-            <p style="color: #666; font-size: 12px;">Or copy and paste this link in your browser:</p>
-            <p style="color: #666; font-size: 12px; word-break: break-all;">${resetUrl}</p>
-            <p style="color: #999; font-size: 12px;">This link will expire in 10 minutes.</p>
-            <p style="color: #999; font-size: 12px;">If you did not request this email, please ignore it.</p>
-        </div>
-        <div class="footer">
-            <p>&copy; ${new Date().getFullYear()} Restaurant App. All rights reserved.</p>
-        </div>
-    </div>
-</body>
-</html>
-        `;
+        const htmlMessage = generatePasswordResetEmail(resetUrl);
 
         try {
             // Non-blocking email sending - fire and forget
