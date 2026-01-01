@@ -243,7 +243,7 @@ NotificationSchema.statics.getUserNotifications = async function(userId, options
     const [notifications, total] = await Promise.all([
         this.find(query)
             .populate('relatedRoomBookingId', 'bookingId status')
-            .populate('roomId', 'name roomNumber type')
+            .populate('roomId', 'name type')
             .sort(sort)
             .limit(limit)
             .skip(skip)

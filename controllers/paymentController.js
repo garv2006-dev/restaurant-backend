@@ -274,7 +274,7 @@ const getPayment = async (req, res) => {
                 path: 'booking',
                 populate: {
                     path: 'room',
-                    select: 'name type roomNumber'
+                    select: 'name type'
                 }
             })
             .populate('user', 'name email');
@@ -412,7 +412,7 @@ const generateInvoice = async (req, res) => {
             .populate({
                 path: 'booking',
                 populate: [
-                    { path: 'room', select: 'name type roomNumber' },
+                    { path: 'room', select: 'name type' },
                     { path: 'user', select: 'name email phone address' }
                 ]
             });

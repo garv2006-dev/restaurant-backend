@@ -388,7 +388,7 @@ const createBooking = async (req, res) => {
     // Populate booking details
     await booking.populate([
       { path: "user", select: "name email phone" },
-      { path: "room", select: "name type roomNumber" },
+      { path: "room", select: "name type" },
     ]);
 
     // Send confirmation email
@@ -415,7 +415,7 @@ Your booking has been confirmed!
 
 BOOKING DETAILS:
 - Booking ID: ${booking.bookingId}
-- Room: ${booking.room.name} (${booking.room.type}) #${booking.room.roomNumber}
+- Room: ${booking.room.name} (${booking.room.type})
 - Check-in Date: ${checkIn.toDateString()}
 - Check-out Date: ${checkOut.toDateString()}
 - Number of Nights: ${nights}
@@ -515,7 +515,7 @@ const getBookings = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const bookings = await Booking.find(query)
-      .populate("room", "_id id name type roomNumber images")
+      .populate("room", "_id id name type images")
             .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
@@ -559,7 +559,7 @@ const getAllBookings = async (req, res) => {
 
     const bookings = await Booking.find(query)
       .populate("user", "name email phone")
-      .populate("room", "_id id name type roomNumber images")
+      .populate("room", "_id id name type images")
             .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
@@ -593,7 +593,7 @@ const getBooking = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
       .populate("user", "name email phone")
-      .populate("room", "name type roomNumber images amenities features")
+      .populate("room", "name type images amenities features")
       ;
 
     if (!booking) {
@@ -685,7 +685,7 @@ const updateBooking = async (req, res) => {
     booking = await Booking.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
-    }).populate("room", "name type roomNumber");
+    }).populate("room", "name type");
 
     res.status(200).json({
       success: true,
@@ -925,7 +925,6 @@ CHECK-IN DETAILS:
 - Booking ID: ${booking.bookingId}
 - Check-in Date: ${booking.checkInDetails.actualCheckInTime.toDateString()}
 - Check-in Time: ${booking.checkInDetails.actualCheckInTime.toLocaleTimeString()}
-- Room Number: #${booking.room.roomNumber}
 - Room Type: ${booking.room.type}
 - Check-out Date: ${new Date(booking.bookingDates.checkOutDate).toDateString()}
 
@@ -1050,7 +1049,6 @@ CHECK-OUT DETAILS:
 - Booking ID: ${booking.bookingId}
 - Check-out Date: ${booking.checkOutDetails.actualCheckOutTime.toDateString()}
 - Check-out Time: ${booking.checkOutDetails.actualCheckOutTime.toLocaleTimeString()}
-- Room Number: #${booking.room.roomNumber}
 - Room Type: ${booking.room.type}
 - Total Nights: ${booking.bookingDates.nights}
 
