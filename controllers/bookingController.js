@@ -152,6 +152,38 @@ const createBooking = async (req, res) => {
       });
     }
 
+    // Validate guest capacity
+    const totalGuests = (guestDetails.totalAdults || 0) + (guestDetails.totalChildren || 0);
+    const maxCapacity = (room.capacity.adults || 0) + (room.capacity.children || 0);
+    
+    if (totalGuests > maxCapacity) {
+      return res.status(400).json({
+        success: false,
+        message: `Room capacity exceeded. This room can accommodate maximum ${maxCapacity} guests (${room.capacity.adults} adults + ${room.capacity.children} children). You selected ${totalGuests} guests.`,
+      });
+    }
+
+    if (guestDetails.totalAdults < 1) {
+      return res.status(400).json({
+        success: false,
+        message: "At least one adult is required for booking",
+      });
+    }
+
+    if (guestDetails.totalAdults > room.capacity.adults) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum ${room.capacity.adults} adults allowed for this room`,
+      });
+    }
+
+    if (guestDetails.totalChildren > room.capacity.children) {
+      return res.status(400).json({
+        success: false,
+        message: `Maximum ${room.capacity.children} children allowed for this room`,
+      });
+    }
+
     // Check availability
     const checkIn = new Date(checkInDate);
     const checkOut = new Date(checkOutDate);
