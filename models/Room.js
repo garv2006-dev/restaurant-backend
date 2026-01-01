@@ -1,12 +1,6 @@
 const mongoose = require('mongoose');
 
 const RoomSchema = new mongoose.Schema({
-    roomNumber: {
-        type: String,
-        required: [true, 'Please add a room number'],
-        unique: true,
-        trim: true
-    },
     name: {
         type: String,
         required: [true, 'Please add a room name'],
@@ -51,11 +45,6 @@ const RoomSchema = new mongoose.Schema({
         basePrice: {
             type: Number,
             required: [true, 'Please add a base price'],
-            min: 0
-        },
-        weekendPrice: {
-            type: Number,
-            required: true,
             min: 0
         },
         seasonalPricing: [{
@@ -207,7 +196,6 @@ RoomSchema.index({ type: 1 });
 RoomSchema.index({ status: 1 });
 RoomSchema.index({ 'price.basePrice': 1 });
 RoomSchema.index({ isActive: 1 });
-// roomNumber index is already created by unique: true in schema definition
 
 // Method to check if room is available for given dates
 RoomSchema.methods.isAvailableForDates = async function(checkIn, checkOut) {
@@ -253,9 +241,6 @@ RoomSchema.methods.getPriceForDates = function(checkIn, checkOut) {
         
         if (seasonalPrice) {
             dailyPrice = seasonalPrice.price;
-        } else if (currentDate.getDay() === 0 || currentDate.getDay() === 6) {
-            // Weekend pricing
-            dailyPrice = this.price.weekendPrice;
         }
         
         totalPrice += dailyPrice;

@@ -1289,12 +1289,12 @@ const generateCheckInEmail = (booking, checkInDetails) => {
                 
                 <div class="section-title" style="margin-top: 30px;">STAY DETAILS</div>
                 <div class="info-row">
-                    <span class="info-label">Room Number</span>
-                    <span class="info-value">#${booking.room.roomNumber}</span>
-                </div>
-                <div class="info-row">
                     <span class="info-label">Room Type</span>
                     <span class="info-value">${booking.room.type}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Room Name</span>
+                    <span class="info-value">${booking.room.name}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Check-out Date</span>
@@ -1674,12 +1674,12 @@ const generateCheckOutEmail = (booking, checkOutDetails) => {
                 
                 <div class="section-title" style="margin-top: 30px;">STAY SUMMARY</div>
                 <div class="info-row">
-                    <span class="info-label">Room Number</span>
-                    <span class="info-value">#${booking.room.roomNumber}</span>
-                </div>
-                <div class="info-row">
                     <span class="info-label">Room Type</span>
                     <span class="info-value">${booking.room.type}</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Room Name</span>
+                    <span class="info-value">${booking.room.name}</span>
                 </div>
                 <div class="info-row">
                     <span class="info-label">Total Nights</span>

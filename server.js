@@ -8,6 +8,7 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
 const path = require('path');
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 const connectDB = require('./config/database');
@@ -61,14 +62,21 @@ const defaultOrigins = [
 const envOrigin = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [];
 const allowedOrigins = [...envOrigin, ...defaultOrigins];
 
+console.log('🌐 CORS allowed origins:', allowedOrigins);
+
 app.use(cors({
   origin: (origin, callback) => {
     // allow requests with no origin like mobile apps or curl
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    console.warn('⚠️  CORS blocked origin:', origin);
     return callback(new Error('CORS not allowed for origin: ' + origin));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  exposedHeaders: ['Content-Range', 'X-Content-Range'],
+  maxAge: 86400, // 24 hours
 }));
 
 // Prevent parameter pollution
@@ -128,13 +136,24 @@ if (process.env.NODE_ENV === 'development') {
 // Static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Health check route
-app.get('/health', (req, res) => {
+// Health check route - enhanced for production monitoring
+app.get('/health', async (req, res) => {
+    const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    const dbLatency = mongoose.connection.readyState === 1 ? 'healthy' : 'unhealthy';
+    
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
         uptime: process.uptime(),
-        environment: process.env.NODE_ENV || 'development'
+        environment: process.env.NODE_ENV || 'development',
+        database: {
+            status: dbStatus,
+            health: dbLatency
+        },
+        memory: {
+            used: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+            total: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB'
+        }
     });
 });
 

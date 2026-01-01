@@ -242,13 +242,6 @@ const createRoom = async (req, res) => {
     } catch (error) {
         console.error('Create room error:', error);
 
-        if (error.code === 11000) {
-            return res.status(400).json({
-                success: false,
-                message: 'Room number already exists'
-            });
-        }
-
         res.status(500).json({
             success: false,
             message: 'Server Error'

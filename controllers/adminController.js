@@ -91,7 +91,7 @@ const getDashboardStats = async (req, res) => {
         // Get recent bookings
         const recentBookings = await Booking.find()
             .populate('user', 'name email')
-            .populate('room', 'name type roomNumber')
+            .populate('room', 'name type')
             .sort({ createdAt: -1 })
             .limit(10);
 
