@@ -1,6 +1,8 @@
 const Discount = require('../models/Discount');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const { validateFirstTimeDiscount } = require('../services/firstTimeUserService');
+const { emitUserNotification } = require('../config/socket');
 
 // @desc    Get all active discounts
 // @route   GET /api/discounts
@@ -221,6 +223,18 @@ exports.createDiscount = async (req, res) => {
     const discount = new Discount(discountData);
     await discount.save();
 
+    // Send notification to all users about the new discount (non-blocking)
+    // Only send if it's not a first-time user discount
+    if (!discount.isFirstTimeUserDiscount) {
+      sendNewDiscountNotificationToAllUsers(discount)
+        .then(result => {
+          console.log(`New discount notification sent to ${result.count} users`);
+        })
+        .catch(err => {
+          console.error('Error sending new discount notifications:', err);
+        });
+    }
+
     res.status(201).json({
       success: true,
       message: 'Discount created successfully',
@@ -240,6 +254,73 @@ exports.createDiscount = async (req, res) => {
       success: false,
       message: 'Server error while creating discount'
     });
+  }
+};
+
+// Helper function to send new discount notification to all users
+const sendNewDiscountNotificationToAllUsers = async (discount) => {
+  try {
+    // Get all active customer users
+    const users = await User.find({ 
+      role: 'customer', 
+      isActive: true 
+    }).select('_id').lean();
+
+    if (users.length === 0) {
+      return { success: true, count: 0 };
+    }
+
+    // Prepare notification data
+    const discountValue = discount.type === 'percentage' 
+      ? `${discount.value}%` 
+      : `₹${discount.value}`;
+    
+    const title = '🎁 New Discount Available!';
+    const message = `Use code ${discount.code} to get ${discountValue} off. ${discount.description}`;
+
+    // Create notifications for all users
+    const notificationPromises = users.map(async (user) => {
+      try {
+        const notification = await Notification.createPromotionNotification({
+          userId: user._id,
+          title,
+          message,
+          promotionId: `new-discount-${discount._id}`
+        });
+
+        // Emit real-time notification via socket
+        try {
+          emitUserNotification(user._id.toString(), {
+            title,
+            message,
+            type: 'promotion',
+            discountCode: discount.code,
+            discountValue: discountValue,
+            notificationId: notification._id,
+            createdAt: notification.createdAt
+          });
+        } catch (socketError) {
+          console.error(`Socket notification error for user ${user._id}:`, socketError);
+        }
+
+        return { success: true, userId: user._id };
+      } catch (error) {
+        console.error(`Error creating notification for user ${user._id}:`, error);
+        return { success: false, userId: user._id };
+      }
+    });
+
+    const results = await Promise.all(notificationPromises);
+    const successCount = results.filter(r => r.success).length;
+
+    return { 
+      success: true, 
+      count: successCount,
+      total: users.length 
+    };
+  } catch (error) {
+    console.error('Error in sendNewDiscountNotificationToAllUsers:', error);
+    throw error;
   }
 };
 

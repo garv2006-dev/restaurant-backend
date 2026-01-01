@@ -27,6 +27,20 @@ const register = async (req, res, next) => {
             password,
             authProvider: 'local'
         });
+        
+        // Send first-time discount notification for new users (non-blocking)
+        if (user.role === 'customer') {
+            sendFirstTimeDiscountNotification(user._id.toString())
+                .then(result => {
+                    if (result.success) {
+                        console.log(`First-time discount sent to new user ${user._id}`);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error sending first-time discount:', err);
+                });
+        }
+        
         const token = user.getSignedJwtToken();
         res.status(201).json({
             success: true,
@@ -64,18 +78,9 @@ const googleLogin = async (req, res, next) => {
         });
 
         if (existingUser) {
-            // Send first-time discount notification for existing users (non-blocking)
-            if (existingUser.role === 'customer') {
-                sendFirstTimeDiscountNotification(existingUser._id.toString())
-                    .then(result => {
-                        if (result.success) {
-                            console.log(`First-time discount sent to user ${existingUser._id}`);
-                        }
-                    })
-                    .catch(err => {
-                        console.error('Error sending first-time discount:', err);
-                    });
-            }
+            // Update last login
+            existingUser.lastLogin = Date.now();
+            await existingUser.save({ validateBeforeSave: false });
             
             const token = existingUser.getSignedJwtToken();
             res.status(201).json({
@@ -100,7 +105,7 @@ const googleLogin = async (req, res, next) => {
             });
 
             // Send first-time discount notification for new Google users (non-blocking)
-            if (user && user.role === 'customer') {
+            if (user && user.role === 'customer' && !user.firstLoginDiscountSent) {
                 sendFirstTimeDiscountNotification(user._id.toString())
                     .then(result => {
                         if (result.success) {
@@ -153,22 +158,22 @@ const login = async (req, res, next) => {
                 message: 'Your account has been deactivated'
             });
         }
-        user.lastLogin = Date.now();
-        await user.save({ validateBeforeSave: false });
-        
-        // Send first-time discount notification (non-blocking)
+        // Send first-time discount notification ONLY for new users (non-blocking)
         // This runs asynchronously and doesn't block the login response
-        if (user.role === 'customer') {
+        if (user.role === 'customer' && !user.firstLoginDiscountSent) {
             sendFirstTimeDiscountNotification(user._id.toString())
                 .then(result => {
                     if (result.success) {
-                        console.log(`First-time discount sent to user ${user._id}`);
+                        console.log(`First-time discount sent to new user ${user._id}`);
                     }
                 })
                 .catch(err => {
                     console.error('Error sending first-time discount:', err);
                 });
         }
+        
+        user.lastLogin = Date.now();
+        await user.save({ validateBeforeSave: false });
         
         const token = user.getSignedJwtToken();
         res.status(200).json({

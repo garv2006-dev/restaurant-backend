@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "test": "jest",
     "test:watch": "jest --watch",
+    "test:email": "node scripts/testEmail.js",
     "seed": "node scripts/seedDatabase.js",
     "seed:dev": "NODE_ENV=development node scripts/seedDatabase.js",
     "create:admin": "node scripts/createAdmin.js"

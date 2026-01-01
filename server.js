@@ -28,6 +28,7 @@ const discountRoutes = require('./routes/discounts');
 const uploadRoutes = require('./routes/upload');
 const customerRoutes = require('./routes/customerRoutes');
 const notificationRoutes = require('./routes/notifications');
+const contactRoutes = require('./routes/contact');
 
 const app = express();
 
@@ -151,6 +152,7 @@ app.use('/api/discounts', discountRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/contact', contactRoutes);
 
 // 404 handler
 // app.use((req, res, next) => {
