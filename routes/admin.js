@@ -8,14 +8,15 @@ const { protect, authorize } = require('../middleware/auth');
 const {
     getDashboardStats,
     getAllBookings,
-    getAllOrders,
+    // getAllOrders, // Disabled - No Order model exists
     getAllUsers,
     updateBookingStatus,
     updateUserStatus,
     getRevenueAnalytics,
     generateReports,
     getSystemSettings,
-    createStaffUser
+    createStaffUser,
+    markPaymentAsPaid
 } = require('../controllers/adminController');
 
 const {
@@ -36,8 +37,11 @@ router.get('/analytics/revenue', getRevenueAnalytics);
 router.get('/bookings', getAllBookings);
 router.put('/bookings/:id/status', updateBookingStatus);
 
-// Order management
-router.get('/orders', getAllOrders);
+// Payment management
+router.put('/payments/:id/mark-paid', markPaymentAsPaid);
+
+// Order management - DISABLED: No Order model exists in this system
+// router.get('/orders', getAllOrders);
 
 // User management
 router.get('/users', getAllUsers);

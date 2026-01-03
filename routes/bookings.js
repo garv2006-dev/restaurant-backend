@@ -13,6 +13,7 @@ const {
     getBooking,
     updateBooking,
     cancelBooking,
+    confirmBooking,
     checkInBooking,
     checkOutBooking
 } = require('../controllers/bookingController');
@@ -32,6 +33,7 @@ router.put('/:id', updateBooking);
 router.put('/:id/cancel', cancelBooking);
 
 // Admin/Staff routes
+router.put('/:id/confirm', authorize('admin', 'staff'), confirmBooking);
 router.put('/:id/checkin', authorize('admin', 'staff'), checkInBooking);
 router.put('/:id/checkout', authorize('admin', 'staff'), checkOutBooking);
 

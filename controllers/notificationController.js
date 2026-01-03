@@ -173,58 +173,58 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
 
         switch (action) {
             case 'created':
-                title = '🏨 New Booking Created';
+                title = 'New Booking Created';
                 message = `Your room booking ${booking.bookingId} for ${room.name} has been created and is pending confirmation.`;
                 bookingStatus = 'Pending';
                 break;
             case 'confirmed':
             case 'confirmed_by_admin':
-                title = '✅ Booking Confirmed!';
+                title = ' Booking Confirmed!';
                 message = `Great news! Your room booking ${booking.bookingId} for ${room.name} has been confirmed by our team.`;
                 bookingStatus = 'Confirmed';
                 break;
             case 'cancelled_by_user':
-                title = '❌ Booking Cancelled';
+                title = 'Booking Cancelled';
                 message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled as requested.`;
                 bookingStatus = 'Cancelled';
                 break;
             case 'cancelled_by_admin':
-                title = '⚠️ Booking Cancelled by Admin';
+                title = 'Booking Cancelled by Admin';
                 message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled by our administrator. Please contact support for details.`;
                 bookingStatus = 'Cancelled';
                 break;
             case 'checked_in':
-                title = '🔑 Check-in Completed';
+                title = 'Check-in Completed';
                 message = `Welcome! You have successfully checked in for booking ${booking.bookingId} at ${room.name}.`;
                 bookingStatus = 'CheckedIn';
                 break;
             case 'checked_out':
-                title = '👋 Check-out Completed';
+                title = 'Check-out Completed';
                 message = `Thank you for staying with us! Check-out completed for booking ${booking.bookingId}. We hope you enjoyed your stay.`;
                 bookingStatus = 'CheckedOut';
                 break;
             case 'updated':
-                title = '📝 Booking Updated';
+                title = 'Booking Updated';
                 message = `Your room booking ${booking.bookingId} details have been updated. Please review the changes.`;
                 bookingStatus = booking.status;
                 break;
             case 'payment_pending':
-                title = '💳 Payment Required';
+                title = 'Payment Required';
                 message = `Payment is required for your booking ${booking.bookingId}. Please complete payment to confirm your reservation.`;
                 bookingStatus = 'Pending';
                 break;
             case 'payment_completed':
-                title = '✅ Payment Successful';
+                title = 'Payment Successful';
                 message = `Payment completed successfully for booking ${booking.bookingId}. Your reservation is now confirmed!`;
                 bookingStatus = 'Confirmed';
                 break;
             case 'no_show':
-                title = '⏰ No Show Recorded';
+                title = 'No Show Recorded';
                 message = `Your booking ${booking.bookingId} has been marked as no-show. Please contact us if this is incorrect.`;
                 bookingStatus = 'NoShow';
                 break;
             default:
-                title = '📢 Booking Update';
+                title = 'Booking Update';
                 message = `There is an update regarding your room booking ${booking.bookingId}.`;
                 bookingStatus = booking.status;
         }
