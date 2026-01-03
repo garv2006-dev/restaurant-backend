@@ -126,7 +126,7 @@ const RoomSchema = new mongoose.Schema({
     }],
     status: {
         type: String,
-        enum: ['Available', 'Occupied', 'Maintenance', 'Out of Order'],
+        enum: ['Available', 'Occupied', 'Maintenance', 'Out of Service'],
         default: 'Available'
     },
     lockedBy: {

@@ -126,10 +126,7 @@ const initializeSocket = (server) => {
       socket.to('admin-dashboard').emit('booking-update', data);
     });
 
-    // Handle order updates
-    socket.on('order-update', (data) => {
-      socket.to('admin-dashboard').emit('order-update', data);
-    });
+
 
     socket.on('disconnect', () => {
       console.log('Client disconnected:', socket.id);
@@ -168,16 +165,7 @@ const emitNewBooking = (bookingData) => {
   }
 };
 
-// Emit new order notification
-const emitNewOrder = (orderData) => {
-  try {
-    const socketIo = getSocketIo();
-    socketIo.to('admin-dashboard').emit('new-order', orderData);
-    console.log('New order emitted:', orderData.orderNumber);
-  } catch (error) {
-    console.error('Error emitting new order:', error);
-  }
-};
+
 
 // Emit booking status change
 const emitBookingStatusChange = (bookingId, status, userId) => {
@@ -199,25 +187,7 @@ const emitBookingStatusChange = (bookingId, status, userId) => {
   }
 };
 
-// Emit order status change
-const emitOrderStatusChange = (orderNumber, status, userId) => {
-  try {
-    const socketIo = getSocketIo();
-    const data = { orderNumber, status, timestamp: new Date() };
-    
-    // Notify admin dashboard
-    socketIo.to('admin-dashboard').emit('order-status-change', data);
-    
-    // Notify specific user
-    if (userId) {
-      socketIo.to(`user-${userId}`).emit('order-status-change', data);
-    }
-    
-    console.log('Order status change emitted:', data);
-  } catch (error) {
-    console.error('Error emitting order status change:', error);
-  }
-};
+
 
 // Emit user notification
 const emitUserNotification = (userId, notification) => {
@@ -311,9 +281,7 @@ module.exports = {
   getSocketIo,
   emitDashboardUpdate,
   emitNewBooking,
-  emitNewOrder,
   emitBookingStatusChange,
-  emitOrderStatusChange,
   emitUserNotification,
   emitRoomLocked,
   emitRoomUnlocked,

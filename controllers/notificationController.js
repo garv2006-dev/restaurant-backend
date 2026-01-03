@@ -229,40 +229,46 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
                 bookingStatus = booking.status;
         }
 
-        // Create notification with idempotency check
-        const notification = await Notification.createRoomBookingNotification({
+        // Check if notification already exists BEFORE creating
+        const existingNotification = await Notification.findOne({
+            userId,
+            type: 'room_booking',
+            relatedRoomBookingId: booking._id,
+            bookingStatus
+        }).maxTimeMS(3000).lean();
+
+        // Only create and emit if notification doesn't exist
+        if (existingNotification) {
+            console.log(`Notification already exists for booking ${booking.bookingId} with status ${bookingStatus}, skipping creation and socket emit`);
+            return existingNotification;
+        }
+
+        // Create new notification
+        const notification = await Notification.create({
             userId,
             title,
             message,
+            type: 'room_booking',
             bookingStatus,
             relatedRoomBookingId: booking._id,
             roomId: room._id
         });
 
-        // CRITICAL: Only emit socket event if notification was NEWLY created
-        // Check if notification was just created (within last 2 seconds)
-        const isNewNotification = notification.createdAt && 
-            (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
-
-        if (isNewNotification) {
-            // Emit real-time notification ONLY for new notifications
-            try {
-                emitUserNotification(userId, {
-                    title,
-                    message,
-                    type: 'room_booking',
-                    bookingId: booking.bookingId,
-                    notificationId: notification._id,
-                    action: action,
-                    status: bookingStatus,
-                    createdAt: notification.createdAt
-                });
-                console.log(`NEW notification created and emitted for user ${userId}: ${title}`);
-            } catch (socketError) {
-                console.error('Socket notification error:', socketError);
-            }
-        } else {
-            console.log(`Notification already existed for user ${userId}, skipping socket emit`);
+        // Emit real-time notification for NEW notification
+        try {
+            emitUserNotification(userId, {
+                title,
+                message,
+                type: 'room_booking',
+                bookingId: booking.bookingId,
+                notificationId: notification._id,
+                action: action,
+                status: bookingStatus,
+                createdAt: notification.createdAt
+            });
+            console.log(`NEW notification created and emitted for user ${userId}: ${title}`);
+        } catch (socketError) {
+            console.error('Socket notification error:', socketError);
         }
 
         return notification;
@@ -291,38 +297,43 @@ const createPaymentNotification = async (userId, bookingData, paymentStatus) => 
             message = `There is an update regarding payment for your booking ${booking.bookingId}.`;
         }
 
-        // Create notification with idempotency check
-        const notification = await Notification.createPaymentNotification({
+        // Check if notification already exists BEFORE creating
+        const existingNotification = await Notification.findOne({
+            userId,
+            type: 'payment',
+            relatedRoomBookingId: booking._id,
+            title
+        }).maxTimeMS(3000).lean();
+
+        // Only create and emit if notification doesn't exist
+        if (existingNotification) {
+            console.log(`Payment notification already exists for booking ${booking.bookingId}, skipping creation and socket emit`);
+            return existingNotification;
+        }
+
+        // Create new notification
+        const notification = await Notification.create({
             userId,
             title,
             message,
+            type: 'payment',
             relatedRoomBookingId: booking._id,
-            roomId: room._id,
-            paymentStatus
+            roomId: room._id
         });
 
-        // CRITICAL: Only emit socket event if notification was NEWLY created
-        // Check if notification was just created (within last 2 seconds)
-        const isNewNotification = notification.createdAt && 
-            (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
-
-        if (isNewNotification) {
-            // Emit real-time notification ONLY for new notifications
-            try {
-                emitUserNotification(userId, {
-                    title,
-                    message,
-                    type: 'payment',
-                    bookingId: booking.bookingId,
-                    notificationId: notification._id,
-                    createdAt: notification.createdAt
-                });
-                console.log(`NEW payment notification created and emitted for user ${userId}`);
-            } catch (socketError) {
-                console.error('Socket notification error:', socketError);
-            }
-        } else {
-            console.log(`Payment notification already existed for user ${userId}, skipping socket emit`);
+        // Emit real-time notification for NEW notification
+        try {
+            emitUserNotification(userId, {
+                title,
+                message,
+                type: 'payment',
+                bookingId: booking.bookingId,
+                notificationId: notification._id,
+                createdAt: notification.createdAt
+            });
+            console.log(`NEW payment notification created and emitted for user ${userId}`);
+        } catch (socketError) {
+            console.error('Socket notification error:', socketError);
         }
 
         return notification;
@@ -358,34 +369,45 @@ const createPromotionNotification = async (req, res) => {
         
         for (const userId of userIds) {
             try {
-                // Create notification with idempotency check
-                const notification = await Notification.createPromotionNotification({
+                // Check if notification already exists BEFORE creating
+                let existingNotification = null;
+                if (promotionId) {
+                    existingNotification = await Notification.findOne({
+                        userId,
+                        type: 'promotion',
+                        title,
+                        message
+                    }).maxTimeMS(3000).lean();
+                }
+
+                if (existingNotification) {
+                    console.log(`Promotion notification already exists for user ${userId}, skipping`);
+                    notifications.push(existingNotification);
+                    continue;
+                }
+
+                // Create new notification
+                const notification = await Notification.create({
                     userId,
                     title,
                     message,
-                    promotionId
+                    type: 'promotion'
                 });
 
                 notifications.push(notification);
+                newNotifications.push(notification);
 
-                // CRITICAL: Only emit socket event if notification was NEWLY created
-                const isNewNotification = notification.createdAt && 
-                    (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
-
-                if (isNewNotification) {
-                    // Emit real-time notification ONLY for new notifications
-                    try {
-                        emitUserNotification(userId, {
-                            title,
-                            message,
-                            type: 'promotion',
-                            notificationId: notification._id,
-                            createdAt: notification.createdAt
-                        });
-                        newNotifications.push(notification);
-                    } catch (socketError) {
-                        console.error('Socket notification error:', socketError);
-                    }
+                // Emit real-time notification for NEW notification
+                try {
+                    emitUserNotification(userId, {
+                        title,
+                        message,
+                        type: 'promotion',
+                        notificationId: notification._id,
+                        createdAt: notification.createdAt
+                    });
+                } catch (socketError) {
+                    console.error('Socket notification error:', socketError);
                 }
             } catch (error) {
                 console.error(`Error creating promotion notification for user ${userId}:`, error);
@@ -432,34 +454,45 @@ const createSystemNotification = async (req, res) => {
         
         for (const userId of userIds) {
             try {
-                // Create notification with idempotency check
-                const notification = await Notification.createSystemNotification({
+                // Check if notification already exists BEFORE creating
+                let existingNotification = null;
+                if (systemEventId) {
+                    existingNotification = await Notification.findOne({
+                        userId,
+                        type: 'system',
+                        title,
+                        message
+                    }).maxTimeMS(3000).lean();
+                }
+
+                if (existingNotification) {
+                    console.log(`System notification already exists for user ${userId}, skipping`);
+                    notifications.push(existingNotification);
+                    continue;
+                }
+
+                // Create new notification
+                const notification = await Notification.create({
                     userId,
                     title,
                     message,
-                    systemEventId
+                    type: 'system'
                 });
 
                 notifications.push(notification);
+                newNotifications.push(notification);
 
-                // CRITICAL: Only emit socket event if notification was NEWLY created
-                const isNewNotification = notification.createdAt && 
-                    (Date.now() - new Date(notification.createdAt).getTime()) < 2000;
-
-                if (isNewNotification) {
-                    // Emit real-time notification ONLY for new notifications
-                    try {
-                        emitUserNotification(userId, {
-                            title,
-                            message,
-                            type: 'system',
-                            notificationId: notification._id,
-                            createdAt: notification.createdAt
-                        });
-                        newNotifications.push(notification);
-                    } catch (socketError) {
-                        console.error('Socket notification error:', socketError);
-                    }
+                // Emit real-time notification for NEW notification
+                try {
+                    emitUserNotification(userId, {
+                        title,
+                        message,
+                        type: 'system',
+                        notificationId: notification._id,
+                        createdAt: notification.createdAt
+                    });
+                } catch (socketError) {
+                    console.error('Socket notification error:', socketError);
                 }
             } catch (error) {
                 console.error(`Error creating system notification for user ${userId}:`, error);
