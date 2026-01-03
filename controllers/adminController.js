@@ -3,7 +3,6 @@ const Room = require('../models/Room');
 const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const Review = require('../models/Review');
-const Order = require('../models/Order');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -34,7 +33,6 @@ const getDashboardStats = async (req, res) => {
         const totalUsers = await User.countDocuments({ role: 'customer' });
         const totalRooms = await Room.countDocuments();
         const totalBookings = await Booking.countDocuments();
-        const totalOrders = await Order.countDocuments();
         const totalRevenue = await Payment.aggregate([
             { $match: { status: 'Completed' } },
             { $group: { _id: null, total: { $sum: '$amount' } } }
@@ -42,10 +40,6 @@ const getDashboardStats = async (req, res) => {
 
         // Get period stats
         const periodBookings = await Booking.countDocuments({
-            createdAt: { $gte: startDate }
-        });
-
-        const periodOrders = await Order.countDocuments({
             createdAt: { $gte: startDate }
         });
         
@@ -74,16 +68,6 @@ const getDashboardStats = async (req, res) => {
             }
         ]);
 
-        // Get order status distribution
-        const ordersByStatus = await Order.aggregate([
-            {
-                $group: {
-                    _id: '$status',
-                    count: { $sum: 1 }
-                }
-            }
-        ]);
-
         // Get room occupancy
         const occupiedRooms = await Room.countDocuments({ status: 'Occupied' });
         const occupancyRate = totalRooms > 0 ? (occupiedRooms / totalRooms) * 100 : 0;
@@ -92,12 +76,6 @@ const getDashboardStats = async (req, res) => {
         const recentBookings = await Booking.find()
             .populate('user', 'name email')
             .populate('room', 'name type')
-            .sort({ createdAt: -1 })
-            .limit(10);
-
-        // Get recent orders
-        const recentOrders = await Order.find()
-            .populate('user', 'name email')
             .sort({ createdAt: -1 })
             .limit(10);
 
@@ -133,20 +111,16 @@ const getDashboardStats = async (req, res) => {
                     totalUsers,
                     totalRooms,
                     totalBookings,
-                    totalOrders,
                     totalRevenue: totalRevenue.length > 0 ? totalRevenue[0].total : 0,
                     occupancyRate: Math.round(occupancyRate)
                 },
                 period: {
                     periodBookings,
-                    periodOrders,
                     periodRevenue: periodRevenue.length > 0 ? periodRevenue[0].total : 0,
                     newUsers
                 },
                 bookingsByStatus,
-                ordersByStatus,
                 recentBookings,
-                recentOrders,
                 pendingReviews,
                 revenueTrend
             }
@@ -504,9 +478,11 @@ const updateBookingStatus = async (req, res) => {
     }
 };
 
-// @desc    Get all orders (Admin)
+// @desc    Get all orders (Admin) - DISABLED: No Order model exists
 // @route   GET /api/admin/orders
 // @access  Private/Admin
+// Note: This system uses Bookings instead of Orders
+/*
 const getAllOrders = async (req, res) => {
     try {
         const {
@@ -566,6 +542,7 @@ const getAllOrders = async (req, res) => {
         });
     }
 };
+*/
 
 // @desc    Get all users (Admin)
 // @route   GET /api/admin/users
@@ -1013,15 +990,137 @@ const createStaffUser = async (req, res) => {
     }
 };
 
+// @desc    Mark cash payment as paid (Admin only)
+// @route   PUT /api/admin/payments/:id/mark-paid
+// @access  Private/Admin
+const markPaymentAsPaid = async (req, res) => {
+    try {
+        const { transactionId, notes } = req.body;
+
+        // Find payment
+        const payment = await Payment.findById(req.params.id)
+            .populate('booking');
+
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                message: 'Payment not found'
+            });
+        }
+
+        // Check if payment is already completed
+        if (payment.status === 'Completed') {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment is already marked as paid'
+            });
+        }
+
+        // Check if payment method is cash
+        const isCashPayment = payment.paymentMethod === 'Cash' || 
+                             payment.paymentMethod === 'cash' || 
+                             payment.paymentMethod === 'COD';
+
+        if (!isCashPayment) {
+            return res.status(400).json({
+                success: false,
+                message: 'Only cash payments can be marked as paid manually'
+            });
+        }
+
+        // Update payment status
+        payment.status = 'Completed';
+        payment.transactionId = transactionId || `CASH${Date.now()}`;
+        payment.paidAt = new Date();
+        payment.processedBy = req.user.id;
+        if (notes) {
+            payment.notes = notes;
+        }
+        await payment.save();
+
+        // Update booking payment status
+        const booking = await Booking.findById(payment.booking);
+        if (booking) {
+            booking.paymentStatus = 'Paid';
+            booking.paymentDetails.paidAmount = payment.amount;
+            booking.paymentDetails.paymentDate = new Date();
+            booking.paymentDetails.transactionId = payment.transactionId;
+            
+            // If booking is still pending, confirm it
+            if (booking.status === 'Pending') {
+                booking.status = 'Confirmed';
+            }
+            
+            await booking.save();
+
+            // Send payment confirmation email
+            try {
+                const sendEmail = require('../utils/sendEmail');
+                const guestEmail = booking.guestDetails?.primaryGuest?.email;
+                const guestName = booking.guestDetails?.primaryGuest?.name || 'Guest';
+
+                if (guestEmail) {
+                    const emailMessage = `
+                        <p>Dear ${guestName},</p>
+                        
+                        <p>We have received your cash payment for booking <strong>${booking.bookingId}</strong>.</p>
+                        
+                        <h4 style="color: #28a745; margin-top: 20px;">Payment Details:</h4>
+                        <ul style="list-style: none; padding-left: 0;">
+                            <li><strong>Amount Paid:</strong> ₹${payment.amount.toFixed(2)}</li>
+                            <li><strong>Payment Method:</strong> Cash</li>
+                            <li><strong>Transaction ID:</strong> ${payment.transactionId}</li>
+                            <li><strong>Payment Date:</strong> ${new Date().toLocaleDateString('en-IN')}</li>
+                        </ul>
+                        
+                        <p style="background-color: #d4edda; padding: 15px; border-left: 4px solid #28a745; margin: 20px 0;">
+                            <strong style="color: #155724;">✓ Payment Confirmed</strong><br>
+                            Your booking is now fully confirmed. We look forward to welcoming you!
+                        </p>
+                        
+                        <p style="margin-top: 30px; color: #666;">
+                            Best regards,<br>
+                            <strong>Luxury Hotel & Rooms Team</strong>
+                        </p>
+                    `;
+
+                    await sendEmail({
+                        email: guestEmail,
+                        subject: `Payment Received - ${booking.bookingId}`,
+                        message: `Payment of ₹${payment.amount.toFixed(2)} received for booking ${booking.bookingId}`,
+                        html: emailMessage
+                    });
+                }
+            } catch (emailError) {
+                console.error('Email sending error:', emailError);
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Payment marked as paid successfully',
+            data: payment
+        });
+
+    } catch (error) {
+        console.error('Mark payment as paid error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
 module.exports = {
     getDashboardStats,
     getAllBookings,
-    getAllOrders,
+    // getAllOrders, // Disabled - No Order model exists in this system
     getAllUsers,
     updateBookingStatus,
     updateUserStatus,
     getRevenueAnalytics,
     generateReports,
     getSystemSettings,
-    createStaffUser
+    createStaffUser,
+    markPaymentAsPaid
 };

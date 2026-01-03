@@ -356,32 +356,102 @@ const createBooking = async (req, res) => {
       }
     }
 
-    // Create payment record automatically
+    // Create payment record automatically with comprehensive details
     let payment = null;
     try {
       const paymentMethod = paymentDetails?.method || "Cash";
+      const normalizedPaymentMethod = typeof paymentMethod === 'string' ? paymentMethod.trim() : paymentMethod;
+      const isCashPayment = normalizedPaymentMethod === "Cash" || normalizedPaymentMethod === "cash" || normalizedPaymentMethod === "COD";
+      
+      // Build payment details object based on payment method
+      const paymentDetailsObj = {};
+      
+      if (normalizedPaymentMethod === "Card") {
+        // Store card payment details
+        paymentDetailsObj.cardLast4 = paymentDetails.cardLast4 || null;
+        paymentDetailsObj.cardBrand = paymentDetails.cardBrand || null;
+        paymentDetailsObj.cardHolderName = paymentDetails.cardHolderName || null;
+      } else if (normalizedPaymentMethod === "UPI") {
+        // Store UPI payment details
+        paymentDetailsObj.upiId = paymentDetails.upiId || null;
+      } else if (normalizedPaymentMethod === "Online") {
+        // Store online banking details
+        paymentDetailsObj.bankName = paymentDetails.bankName || null;
+      }
+      
       const paymentData = {
         booking: booking._id,
         user: req.user.id,
         amount: totalAmount,
-        paymentMethod: paymentMethod,
-        gateway: paymentMethod === "Cash" ? "Manual" : "Manual",
-        status: paymentMethod === "Cash" ? "Pending" : "Completed",
+        currency: 'INR',
+        paymentMethod: normalizedPaymentMethod,
+        method: normalizedPaymentMethod, // Alias field
+        gateway: isCashPayment ? "Manual" : "Manual", // Can be updated to actual gateway later
+        paymentGateway: isCashPayment ? "Manual" : "Manual",
+        status: "Completed", // All payments are completed immediately
+        transactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
+        gatewayTransactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
+        paymentDetails: paymentDetailsObj,
+        billingAddress: {
+          firstName: guestDetails.primaryGuest.name.split(' ')[0] || '',
+          lastName: guestDetails.primaryGuest.name.split(' ').slice(1).join(' ') || '',
+          email: guestDetails.primaryGuest.email,
+          phone: guestDetails.primaryGuest.phone
+        },
+        description: `Payment for booking ${booking.bookingId} - ${room.name} (${nights} nights)`,
+        paymentDate: new Date(),
+        fees: {
+          gatewayFee: 0, // Can be calculated based on payment method
+          platformFee: 0,
+          processingFee: 0
+        },
+        taxes: {
+          gst: gst,
+          serviceTax: 0,
+          other: 0
+        },
+        metadata: {
+          bookingId: booking.bookingId,
+          roomId: roomId,
+          roomName: room.name,
+          checkInDate: checkIn.toISOString(),
+          checkOutDate: checkOut.toISOString(),
+          nights: nights,
+          guests: `${guestDetails.totalAdults} adults, ${guestDetails.totalChildren} children`,
+          discountApplied: appliedDiscount ? true : false,
+          discountCode: appliedDiscount?.code || null,
+          discountAmount: discountAmount || 0
+        }
       };
 
-      // Add transaction ID for online payments
-      if (paymentMethod !== "Cash") {
-        paymentData.transactionId = `TXN${Date.now()}`;
-      }
-
       payment = await Payment.create(paymentData);
+      console.log('Payment record created successfully:', payment.paymentId);
 
-      // Update booking payment status
-      booking.paymentStatus = paymentMethod === "Cash" ? "Pending" : "Paid";
-      booking.status = paymentMethod === "Cash" ? "Pending" : "Confirmed";
+      // Update booking with payment reference
+      // Payment is completed but booking status remains Pending until admin confirms
+      booking.paymentStatus = "Paid";
+      booking.status = "Pending"; // Changed from "Confirmed" to "Pending"
+      booking.paymentDetails.paymentId = payment._id;
       await booking.save();
+
+      // Create payment notification
+      try {
+        await createPaymentNotification(
+          req.user.id,
+          {
+            payment,
+            booking,
+            amount: totalAmount,
+            method: normalizedPaymentMethod
+          },
+          'payment_completed'
+        );
+      } catch (notifError) {
+        console.error("Payment notification error:", notifError);
+      }
     } catch (paymentError) {
       console.error("Payment creation error:", paymentError);
+      console.error("Payment error details:", paymentError.message);
       // Continue even if payment creation fails
     }
 
@@ -411,10 +481,11 @@ const createBooking = async (req, res) => {
       const plainTextMessage = `
 Dear ${guestDetails.primaryGuest.name},
 
-Your booking has been confirmed!
+Your booking has been received and is PENDING CONFIRMATION!
 
 BOOKING DETAILS:
 - Booking ID: ${booking.bookingId}
+- Status: PENDING (Awaiting Admin Confirmation)
 - Room: ${booking.room.name} (${booking.room.type})
 - Check-in Date: ${checkIn.toDateString()}
 - Check-out Date: ${checkOut.toDateString()}
@@ -433,10 +504,12 @@ PRICING BREAKDOWN:
 - GST (18%): ₹${gst.toFixed(2)}
 - TOTAL AMOUNT: ₹${totalAmount.toFixed(2)}
 
-PAYMENT METHOD: ${paymentDetails?.method || 'Cash'}
+PAYMENT INFORMATION:
+- Payment Method: ${paymentDetails?.method || 'Cash'}
+- Payment Status: ${booking.paymentStatus}
 ${specialRequests ? `\nSPECIAL REQUESTS:\n${specialRequests}` : ''}
 
-We look forward to hosting you at our luxury hotel!
+IMPORTANT: Your booking is currently PENDING and will be confirmed by our admin team shortly. You will receive a confirmation email once your booking is approved.
 
 If you need to cancel or modify your booking, please contact us at concierge@luxuryhotel.com or call +1 (555) 123-4567.
 
@@ -446,7 +519,7 @@ Luxury Hotel Booking Team
 
       await sendEmail({
         email: guestDetails.primaryGuest.email,
-        subject: `🎉 Booking Confirmed - ${booking.bookingId} | Luxury Hotel`,
+        subject: `⏳ Booking Received - Pending Confirmation - ${booking.bookingId} | Luxury Hotel`,
         message: plainTextMessage,
         html: htmlMessage,
       });
@@ -471,7 +544,7 @@ Luxury Hotel Booking Team
       // Send notification to user
       emitUserNotification(req.user.id, {
         title: "🏨 Booking Created Successfully!",
-        message: `Your booking ${booking.bookingId} has been created and is ${booking.status === 'Confirmed' ? 'confirmed' : 'pending confirmation'}`,
+        message: `Your booking ${booking.bookingId} has been created and is pending admin confirmation`,
         type: "success",
         bookingId: booking.bookingId,
       });
@@ -480,7 +553,7 @@ Luxury Hotel Booking Team
       await createRoomBookingNotification(
         req.user.id,
         { booking, room: booking.room, status: booking.status },
-        booking.status === 'Confirmed' ? 'confirmed_by_admin' : 'created'
+        'created'
       );
     } catch (notificationError) {
       console.error("Notification creation error:", notificationError);
@@ -489,6 +562,14 @@ Luxury Hotel Booking Team
     res.status(201).json({
       success: true,
       data: booking,
+      bookingId: booking.bookingId,
+      paymentId: payment?.paymentId || null,
+      message: "Booking created successfully and is pending admin confirmation",
+      notificationTrigger: {
+        type: 'booking_pending',
+        bookingId: booking.bookingId,
+        message: `Your booking has been received and is pending confirmation. Booking ID: ${booking.bookingId}`
+      }
     });
   } catch (error) {
     console.error("Create booking error:", error);
@@ -872,6 +953,119 @@ const cancelBooking = async (req, res) => {
   }
 };
 
+// @desc    Confirm booking (Admin only)
+// @route   PUT /api/bookings/:id/confirm
+// @access  Private/Admin
+const confirmBooking = async (req, res) => {
+  try {
+    const booking = await Booking.findById(req.params.id)
+      .populate('room')
+      .populate('user', 'name email');
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: "Booking not found",
+      });
+    }
+
+    // Check if booking is in Pending status
+    if (booking.status !== "Pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot confirm booking with status: ${booking.status}. Only Pending bookings can be confirmed.`,
+      });
+    }
+
+    // Update booking status to Confirmed
+    booking.status = "Confirmed";
+    await booking.save();
+
+    // Send confirmation email to customer
+    try {
+      const checkIn = new Date(booking.bookingDates.checkInDate);
+      const checkOut = new Date(booking.bookingDates.checkOutDate);
+      const nights = booking.bookingDates.nights;
+
+      const emailMessage = `
+Dear ${booking.guestDetails.primaryGuest.name},
+
+Great news! Your booking has been CONFIRMED by our team!
+
+BOOKING DETAILS:
+- Booking ID: ${booking.bookingId}
+- Status: CONFIRMED ✓
+- Room: ${booking.room.name} (${booking.room.type})
+- Check-in Date: ${checkIn.toDateString()}
+- Check-out Date: ${checkOut.toDateString()}
+- Number of Nights: ${nights}
+- Total Guests: ${booking.guestDetails.totalAdults} Adult(s), ${booking.guestDetails.totalChildren} Child(ren)
+
+PAYMENT INFORMATION:
+- Total Amount: ₹${booking.pricing.totalAmount.toFixed(2)}
+- Payment Status: ${booking.paymentStatus}
+- Payment Method: ${booking.paymentDetails.method}
+
+We look forward to welcoming you at our hotel!
+
+If you have any questions or need to make changes, please contact us at:
+- Email: concierge@luxuryhotel.com
+- Phone: +1 (555) 123-4567
+
+Best regards,
+Luxury Hotel Team
+      `;
+
+      await sendEmail({
+        email: booking.guestDetails.primaryGuest.email,
+        subject: `✅ Booking Confirmed - ${booking.bookingId} | Luxury Hotel`,
+        message: emailMessage,
+      });
+    } catch (emailError) {
+      console.error("Confirmation email sending error:", emailError);
+    }
+
+    // Emit real-time notifications
+    try {
+      // Notify user
+      emitUserNotification(booking.user._id.toString(), {
+        title: "✅ Booking Confirmed!",
+        message: `Your booking ${booking.bookingId} has been confirmed by admin`,
+        type: "success",
+        bookingId: booking.bookingId,
+      });
+
+      // Emit booking status change
+      emitBookingStatusChange(
+        booking.bookingId,
+        "Confirmed",
+        booking.user._id.toString()
+      );
+
+      // Create notification in database
+      await createRoomBookingNotification(
+        booking.user._id.toString(),
+        { booking, room: booking.room, status: 'Confirmed' },
+        'confirmed_by_admin'
+      );
+    } catch (notificationError) {
+      console.error("Notification error:", notificationError);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Booking confirmed successfully",
+      data: booking,
+    });
+  } catch (error) {
+    console.error("Confirm booking error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server Error",
+    });
+  }
+};
+
 // @desc    Check-in booking (Admin/Staff only)
 // @route   PUT /api/bookings/:id/checkin
 // @access  Private/Admin
@@ -1103,6 +1297,7 @@ module.exports = {
   getBooking,
   updateBooking,
   cancelBooking,
+  confirmBooking,
   checkInBooking,
   checkOutBooking,
 };

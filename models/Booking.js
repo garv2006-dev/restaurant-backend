@@ -128,9 +128,13 @@ const BookingSchema = new mongoose.Schema({
         default: 'Pending'
     },
     paymentDetails: {
+        paymentId: {
+            type: mongoose.Schema.ObjectId,
+            ref: 'Payment'
+        },
         method: {
             type: String,
-            enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Cash', 'BankTransfer']
+            enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Cash', 'BankTransfer', 'Card', 'Online']
         },
         transactionId: String,
         paidAmount: {

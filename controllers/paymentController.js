@@ -510,33 +510,29 @@ const createPayment = async (req, res) => {
         }
 
         // Create payment record
+        // Normalize payment method to handle case variations
+        const normalizedPaymentMethod = typeof paymentMethod === 'string' ? paymentMethod.trim() : paymentMethod;
+        const isCashPayment = normalizedPaymentMethod === "Cash" || normalizedPaymentMethod === "cash" || normalizedPaymentMethod === "COD";
+        
         const paymentData = {
             booking: bookingId,
             user: booking.user._id,
             amount: amount || booking.pricing.totalAmount,
-            paymentMethod: paymentMethod,
-            gateway: paymentMethod === 'Cash' ? 'Manual' : 'Manual',
-            status: paymentMethod === 'Cash' ? 'Pending' : 'Completed'
+            paymentMethod: normalizedPaymentMethod,
+            gateway: 'Manual',
+            status: 'Completed',
+            transactionId: `TXN${Date.now()}`
         };
-
-        // Add transaction ID for online payments
-        if (paymentMethod !== 'Cash') {
-            paymentData.transactionId = `TXN${Date.now()}`;
-        }
 
         const payment = await Payment.create(paymentData);
 
-        // Update booking status based on payment method
-        if (paymentMethod === 'Cash') {
-            booking.paymentStatus = 'Pending';
-        } else {
-            booking.paymentStatus = 'Paid';
-            booking.status = 'Confirmed';
-        }
+        // Update booking status - all payments are marked as paid
+        booking.paymentStatus = 'Paid';
+        booking.status = 'Confirmed';
         
         booking.paymentDetails = {
-            method: paymentMethod,
-            paidAmount: amount,
+            method: normalizedPaymentMethod,
+            paidAmount: amount || booking.pricing.totalAmount,
             paymentDate: new Date()
         };
         await booking.save();
