@@ -481,69 +481,6 @@ const updateBookingStatus = async (req, res) => {
 // @desc    Get all orders (Admin) - DISABLED: No Order model exists
 // @route   GET /api/admin/orders
 // @access  Private/Admin
-// Note: This system uses Bookings instead of Orders
-/*
-const getAllOrders = async (req, res) => {
-    try {
-        const {
-            status,
-            paymentMethod,
-            dateFrom,
-            dateTo,
-            search,
-            page = 1,
-            limit = 20
-        } = req.query;
-
-        let query = {};
-
-        if (status) query.status = status;
-        if (paymentMethod) query.paymentMethod = paymentMethod;
-
-        if (dateFrom || dateTo) {
-            query.createdAt = {};
-            if (dateFrom) query.createdAt.$gte = new Date(dateFrom);
-            if (dateTo) query.createdAt.$lte = new Date(dateTo);
-        }
-
-        if (search) {
-            query.$or = [
-                { orderNumber: { $regex: search, $options: 'i' } }
-            ];
-        }
-
-        const skip = (page - 1) * limit;
-
-        const orders = await Order.find(query)
-            .populate('user', 'name email phone')
-            .sort({ createdAt: -1 })
-            .limit(Number(limit))
-            .skip(skip);
-
-        const total = await Order.countDocuments(query);
-
-        res.status(200).json({
-            success: true,
-            count: orders.length,
-            total,
-            pagination: {
-                page: Number(page),
-                limit: Number(limit),
-                pages: Math.ceil(total / limit)
-            },
-            data: orders
-        });
-
-    } catch (error) {
-        console.error('Get all orders error:', error);
-        res.status(500).json({
-            success: false,
-            message: 'Server Error'
-        });
-    }
-};
-*/
-
 // @desc    Get all users (Admin)
 // @route   GET /api/admin/users
 // @access  Private/Admin
@@ -1114,7 +1051,6 @@ const markPaymentAsPaid = async (req, res) => {
 module.exports = {
     getDashboardStats,
     getAllBookings,
-    // getAllOrders, // Disabled - No Order model exists in this system
     getAllUsers,
     updateBookingStatus,
     updateUserStatus,

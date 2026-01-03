@@ -8,7 +8,6 @@ const { protect, authorize } = require('../middleware/auth');
 const {
     getDashboardStats,
     getAllBookings,
-    // getAllOrders, // Disabled - No Order model exists
     getAllUsers,
     updateBookingStatus,
     updateUserStatus,
@@ -39,9 +38,6 @@ router.put('/bookings/:id/status', updateBookingStatus);
 
 // Payment management
 router.put('/payments/:id/mark-paid', markPaymentAsPaid);
-
-// Order management - DISABLED: No Order model exists in this system
-// router.get('/orders', getAllOrders);
 
 // User management
 router.get('/users', getAllUsers);

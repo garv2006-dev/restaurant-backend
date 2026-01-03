@@ -9,16 +9,7 @@ const PaymentSchema = new mongoose.Schema({
     booking: {
         type: mongoose.Schema.ObjectId,
         ref: 'Booking',
-        required: function() {
-            return !this.order; // Either booking or order is required
-        }
-    },
-    order: {
-        type: mongoose.Schema.ObjectId,
-        ref: 'Order',
-        required: function() {
-            return !this.booking; // Either booking or order is required
-        }
+        required: [true, 'Payment must belong to a booking']
     },
     user: {
         type: mongoose.Schema.ObjectId,
@@ -184,7 +175,6 @@ const PaymentSchema = new mongoose.Schema({
 
 // Indexes
 PaymentSchema.index({ booking: 1 });
-PaymentSchema.index({ order: 1 });
 PaymentSchema.index({ user: 1 });
 PaymentSchema.index({ status: 1 });
 PaymentSchema.index({ paymentDate: -1 });
