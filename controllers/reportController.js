@@ -204,30 +204,10 @@ const getCustomerAnalytics = async (startDate, endDate) => {
     }
   ]);
 
-  const loyaltyStats = await User.aggregate([
-    {
-      $match: {
-        role: 'customer',
-        loyaltyPoints: { $gt: 0 }
-      }
-    },
-    {
-      $group: {
-        _id: null,
-        loyaltyMembers: { $sum: 1 },
-        averageLoyaltyPoints: { $avg: '$loyaltyPoints' }
-      }
-    }
-  ]);
-
-  const loyaltyData = loyaltyStats[0] || { loyaltyMembers: 0, averageLoyaltyPoints: 0 };
-
   return {
     totalCustomers,
     newCustomers,
-    returningCustomers: returningCustomers[0]?.returningCustomers || 0,
-    loyaltyMembers: loyaltyData.loyaltyMembers,
-    averageLoyaltyPoints: Math.round(loyaltyData.averageLoyaltyPoints || 0)
+    returningCustomers: returningCustomers[0]?.returningCustomers || 0
   };
 };
 

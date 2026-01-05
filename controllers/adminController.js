@@ -804,7 +804,6 @@ const generateReports = async (req, res) => {
                             name: 1,
                             email: 1,
                             phone: 1,
-                            loyaltyPoints: 1,
                             totalBookings: { $size: '$bookings' },
                             createdAt: 1
                         }

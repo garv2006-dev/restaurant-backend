@@ -112,6 +112,18 @@ const BookingSchema = new mongoose.Schema({
                 default: 0
             }
         },
+        redemption: {
+            redemptionCode: String,
+            rewardName: String,
+            amount: {
+                type: Number,
+                default: 0
+            },
+            discountType: {
+                type: String,
+                enum: ['percentage', 'fixed', 'freeItem']
+            }
+        },
         totalAmount: {
             type: Number,
             required: true
@@ -202,10 +214,6 @@ const BookingSchema = new mongoose.Schema({
             default: 0
         }
     },
-    loyaltyPointsEarned: {
-        type: Number,
-        default: 0
-    },
     reviews: [{
         type: mongoose.Schema.ObjectId,
         ref: 'Review'
@@ -239,11 +247,6 @@ BookingSchema.pre('save', function(next) {
     const checkIn = new Date(this.bookingDates.checkInDate);
     const checkOut = new Date(this.bookingDates.checkOutDate);
     this.bookingDates.nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-    
-    // Calculate loyalty points (1 point per $1 spent)
-    if (this.paymentStatus === 'Paid' && this.loyaltyPointsEarned === 0) {
-        this.loyaltyPointsEarned = Math.floor(this.pricing.totalAmount);
-    }
     
     next();
 });

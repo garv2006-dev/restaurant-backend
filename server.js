@@ -23,7 +23,7 @@ const bookingRoutes = require('./routes/bookings');
 const paymentRoutes = require('./routes/payments');
 const reviewRoutes = require('./routes/reviews');
 const adminRoutes = require('./routes/admin');
-const loyaltyRoutes = require('./routes/loyalty');
+
 const discountRoutes = require('./routes/discounts');
 const uploadRoutes = require('./routes/upload');
 const customerRoutes = require('./routes/customerRoutes');
@@ -122,6 +122,12 @@ app.use('/api/auth', authLimiter);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Data sanitization against NoSQL query injection
+app.use(mongoSanitize());
+
+// Data sanitization against XSS
+app.use(xss());
+
 // Compression middleware
 app.use(compression());
 
@@ -164,7 +170,7 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/loyalty', loyaltyRoutes);
+
 app.use('/api/discounts', discountRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/customers', customerRoutes);

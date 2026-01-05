@@ -5,7 +5,6 @@ const Payment = require("../models/Payment");
 const Discount = require("../models/Discount");
 const sendEmail = require("../utils/sendEmail");
 const { generateBookingConfirmationEmail, generateCancellationEmail } = require("../utils/emailTemplates");
-const { awardPointsForBooking } = require("./loyaltyController");
 const {
   emitNewBooking,
   emitBookingStatusChange,
@@ -140,7 +139,8 @@ const createBooking = async (req, res) => {
       preferences,
       extraServices,
       paymentDetails,
-      discountCode, // New field for discount
+      discountCode, // Existing discount code field
+      redemptionCode, // New redemption code field
     } = req.body;
 
     // Find room
@@ -287,20 +287,81 @@ const createBooking = async (req, res) => {
       }
     }
 
+    // Handle redemption code application
+    let appliedRedemption = null;
+    let redemptionDiscountAmount = 0;
+    
+    if (redemptionCode) {
+      try {
+        // Find and validate redemption
+        const redemption = await RewardRedemption.findOne({ 
+          redemptionCode: redemptionCode.toUpperCase(),
+          user: req.user.id
+        });
+
+        if (!redemption) {
+          return res.status(400).json({
+            success: false,
+            message: "Invalid redemption code",
+          });
+        }
+
+        if (!redemption.isValidForUse()) {
+          return res.status(400).json({
+            success: false,
+            message: redemption.status === 'Used' ? 'Redemption code has already been used' : 
+                     redemption.status === 'Expired' ? 'Redemption code has expired' :
+                     'Redemption code is not valid',
+          });
+        }
+
+        // Calculate redemption discount
+        const reward = redemption.reward;
+        const subtotalAfterDiscount = subtotal - discountAmount; // Apply after regular discount
+        
+        if (reward.discountType === 'percentage') {
+          redemptionDiscountAmount = (subtotalAfterDiscount * reward.discountValue) / 100;
+          if (reward.maxDiscount && redemptionDiscountAmount > reward.maxDiscount) {
+            redemptionDiscountAmount = reward.maxDiscount;
+          }
+        } else if (reward.discountType === 'fixed') {
+          redemptionDiscountAmount = Math.min(reward.discountValue, subtotalAfterDiscount);
+        }
+        
+        if (redemptionDiscountAmount > 0) {
+          appliedRedemption = {
+            redemptionId: redemption.redemptionId,
+            code: redemption.redemptionCode,
+            rewardName: reward.name,
+            discountType: reward.discountType,
+            discountValue: reward.discountValue,
+            amount: redemptionDiscountAmount
+          };
+        }
+      } catch (redemptionError) {
+        console.error('Redemption validation error:', redemptionError);
+        return res.status(400).json({
+          success: false,
+          message: "Error applying redemption code",
+        });
+      }
+    }
+
     // Calculate final amounts
-    const subtotalAfterDiscount = subtotal - discountAmount;
-    const gst = subtotalAfterDiscount * 0.18;
-    const totalAmount = subtotalAfterDiscount + gst;
+    const totalDiscountAmount = discountAmount + redemptionDiscountAmount;
+    const subtotalAfterDiscounts = subtotal - totalDiscountAmount;
+    const gst = subtotalAfterDiscounts * 0.18;
+    const totalAmount = subtotalAfterDiscounts + gst;
 
     // Ensure total amount is not negative
     if (totalAmount <= 0) {
       return res.status(400).json({
         success: false,
-        message: "Invalid booking amount after discount",
+        message: "Invalid booking amount after discounts",
       });
     }
 
-    // Create booking with discount information
+    // Create booking with discount and redemption information
     const booking = await Booking.create({
       user: req.user.id,
       room: roomId,
@@ -323,6 +384,12 @@ const createBooking = async (req, res) => {
           amount: 0,
           percentage: 0
         },
+        redemption: appliedRedemption ? {
+          redemptionCode: appliedRedemption.code,
+          rewardName: appliedRedemption.rewardName,
+          amount: redemptionDiscountAmount,
+          discountType: appliedRedemption.discountType
+        } : null,
         taxes: { gst },
         totalAmount,
       },
@@ -336,7 +403,26 @@ const createBooking = async (req, res) => {
       },
     });
 
-    // If discount was applied, record its usage
+    // If redemption was applied, mark it as used
+    if (appliedRedemption) {
+      try {
+        const redemption = await RewardRedemption.findOne({ 
+          redemptionCode: appliedRedemption.code,
+          user: req.user.id
+        });
+        if (redemption) {
+          await redemption.markAsUsed({
+            usedFor: `Booking ${booking.bookingId}`,
+            usedAmount: redemptionDiscountAmount,
+            usedBy: req.user.id
+          });
+          console.log(`Redemption ${appliedRedemption.code} marked as used for booking ${booking.bookingId}`);
+        }
+      } catch (redemptionUpdateError) {
+        console.error('Error updating redemption usage:', redemptionUpdateError);
+        // Continue with booking creation even if redemption update fails
+      }
+    }
     if (appliedDiscount) {
       try {
         const discount = await Discount.findById(appliedDiscount.discountId);
@@ -1204,21 +1290,6 @@ const checkOutBooking = async (req, res) => {
 
     // Update room status
     await Room.findByIdAndUpdate(booking.room, { status: "Available" });
-
-    // Award loyalty points to user for completed booking
-    try {
-      const loyaltyResult = await awardPointsForBooking(
-        booking.user,
-        booking.pricing.totalAmount
-      );
-      if (loyaltyResult) {
-        console.log(
-          `Awarded ${loyaltyResult.pointsAwarded} loyalty points to user ${booking.user}`
-        );
-      }
-    } catch (loyaltyError) {
-      console.error("Error awarding loyalty points:", loyaltyError);
-    }
 
     await booking.save();
 
