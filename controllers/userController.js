@@ -149,7 +149,6 @@ const getDashboard = async (req, res) => {
                 user: {
                     name: user.name,
                     email: user.email,
-                    loyaltyPoints: user.loyaltyPoints,
                     avatar: user.avatar
                 },
                 stats: {
@@ -367,7 +366,7 @@ const updateUser = async (req, res) => {
         const fieldsToUpdate = {};
         
         // Only allow certain fields to be updated by admin
-        const allowedFields = ['name', 'role', 'isActive', 'loyaltyPoints'];
+        const allowedFields = ['name', 'role', 'isActive'];
         allowedFields.forEach(field => {
             if (req.body[field] !== undefined) {
                 fieldsToUpdate[field] = req.body[field];

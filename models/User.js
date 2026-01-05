@@ -76,23 +76,7 @@ const UserSchema = new mongoose.Schema(
         default: "en",
       },
     },
-    loyaltyPoints: {
-      type: Number,
-      default: 0,
-    },
-    loyaltyTier: {
-      type: String,
-      default: "Bronze",
-    },
-    totalPointsEarned: {
-      type: Number,
-      default: 0,
-    },
-    totalPointsRedeemed: {
-      type: Number,
-      default: 0,
-    },
-    loyaltyJoinDate: {
+    createdAt: {
       type: Date,
       default: Date.now,
     },
@@ -191,12 +175,6 @@ UserSchema.methods.getEmailVerificationToken = function () {
   this.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
   return verificationToken;
-};
-
-// Add loyalty points
-UserSchema.methods.addLoyaltyPoints = function (points) {
-  this.loyaltyPoints += points;
-  return this.save();
 };
 
 // Remove sensitive information from JSON output
