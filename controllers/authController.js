@@ -27,7 +27,7 @@ const register = async (req, res, next) => {
             password,
             authProvider: 'local'
         });
-        
+
         // Send first-time discount notification for new users (non-blocking)
         if (user.role === 'customer') {
             sendFirstTimeDiscountNotification(user._id.toString())
@@ -40,7 +40,7 @@ const register = async (req, res, next) => {
                     console.error('Error sending first-time discount:', err);
                 });
         }
-        
+
         const token = user.getSignedJwtToken();
         res.status(201).json({
             success: true,
@@ -81,7 +81,7 @@ const googleLogin = async (req, res, next) => {
             // Update last login
             existingUser.lastLogin = Date.now();
             await existingUser.save({ validateBeforeSave: false });
-            
+
             const token = existingUser.getSignedJwtToken();
             res.status(201).json({
                 success: true,
@@ -171,10 +171,10 @@ const login = async (req, res, next) => {
                     console.error('Error sending first-time discount:', err);
                 });
         }
-        
+
         user.lastLogin = Date.now();
         await user.save({ validateBeforeSave: false });
-        
+
         const token = user.getSignedJwtToken();
         res.status(200).json({
             success: true,
@@ -218,8 +218,8 @@ const getMe = async (req, res, next) => {
 const forgotPassword = async (req, res, next) => {
     try {
         const user = await User.findOne({ email: req.body.email });
-        
-        console.log("user>>>>>", user)
+
+        console.log("✅ USER IN FORGOT PASSWORD HANDLER", user)
         // Always return generic message for security
         if (!user) {
             return res.status(200).json({
@@ -230,10 +230,16 @@ const forgotPassword = async (req, res, next) => {
 
         // Generate reset token
         const resetToken = user.getResetPasswordToken();
+
+        console.log("✅ RESET TOKEN", resetToken);
+
         await user.save({ validateBeforeSave: false });
 
         // Create reset URL
         const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
+
+        console.log("✅ RESET URL", resetUrl);
+
 
         // Email message
         const message = `
@@ -248,28 +254,32 @@ This link will expire in 10 minutes.
 If you did not request this, please ignore this email.
         `;
 
+        console.log("✅ MESSAGE", message);
+
+
         const htmlMessage = generatePasswordResetEmail(resetUrl);
 
         try {
             // Non-blocking email sending - fire and forget
             if (sendEmail.sendEmailAsync) {
-                console.log("sendEmail.sendEmailAsync CALLED", sendEmail)
-                sendEmail.sendEmailAsync({
+                console.log("✅ IF PART CALLED")
+                await sendEmail.sendEmailAsync({
                     email: user.email,
                     subject: 'Password Reset Request',
                     message,
                     html: htmlMessage
                 });
             } else {
-                console.log("sendEmail. ELSE CALLED")
+                console.log("✅ ELSE PART CALLED")
+
 
                 // Fallback for older implementation
-                sendEmail({
+                await sendEmail({
                     email: user.email,
                     subject: 'Password Reset Request',
                     message,
                     html: htmlMessage
-                }).catch(err => console.error('[Email Error]', { email: user.email, error: err.message, timestamp: new Date().toISOString() }));
+                })
             }
 
             res.status(200).json({
@@ -277,6 +287,9 @@ If you did not request this, please ignore this email.
                 message: 'If the email exists in our system, a password reset link has been sent'
             });
         } catch (error) {
+            console.log("❌ GET ERROR", error)
+            console.log("❌ GET ERROR RESPONSE", error?.response)
+
             // Clear reset token if email sending fails
             user.resetPasswordToken = undefined;
             user.resetPasswordExpire = undefined;
