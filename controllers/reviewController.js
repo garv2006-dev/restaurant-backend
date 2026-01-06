@@ -29,17 +29,23 @@ const createReview = async (req, res) => {
             }
         }
 
-        // Check if review already exists
+        // Check if review already exists for this user and booking
         const existingReview = await Review.findOne({
             user: req.user.id,
-            ...(booking && { booking }),
-            ...(room && { room }),
-                    });
+            booking: booking
+        });
 
         if (existingReview) {
             return res.status(400).json({
                 success: false,
-                message: 'Review already exists'
+                message: 'You have already submitted a review for this booking. Each booking can only be reviewed once.',
+                code: 'REVIEW_ALREADY_EXISTS',
+                existingReview: {
+                    id: existingReview._id,
+                    title: existingReview.title,
+                    rating: existingReview.rating,
+                    createdAt: existingReview.createdAt
+                }
             });
         }
 
@@ -50,7 +56,10 @@ const createReview = async (req, res) => {
             rating,
             title,
             comment,
-            reviewType
+            reviewType,
+            isApproved: true,  // Auto-approve reviews
+            moderatedAt: new Date(),
+            moderatorNote: 'Auto-approved on submission'
         });
 
         await review.populate([
@@ -94,12 +103,16 @@ const createReview = async (req, res) => {
 // @access  Public
 const getReviews = async (req, res) => {
     try {
-        const { room, rating, page = 1, limit = 10 } = req.query;
+        const { room, rating, page = 1, limit = 10, showAll } = req.query;
         
-        let query = { isApproved: true };
+        // For testing: allow showing unapproved reviews with ?showAll=true
+        let query = {};
+        if (showAll !== 'true') {
+            query.isApproved = true;
+        }
 
         if (room) query.room = room;
-                if (rating) query.rating = { $gte: Number(rating) };
+        if (rating) query.rating = { $gte: Number(rating) };
 
         const skip = (page - 1) * limit;
 
@@ -344,6 +357,75 @@ const getPendingReviews = async (req, res) => {
     }
 };
 
+// @desc    Check if user can review a booking
+// @route   GET /api/reviews/can-review/:bookingId
+// @access  Private
+const canReviewBooking = async (req, res) => {
+    try {
+        const { bookingId } = req.params;
+        
+        // Check if booking exists and belongs to user
+        const booking = await Booking.findById(bookingId);
+        if (!booking || booking.user.toString() !== req.user.id) {
+            return res.status(404).json({
+                success: false,
+                message: 'Booking not found or not authorized'
+            });
+        }
+
+        // Check if booking is completed
+        if (booking.status !== 'CheckedOut') {
+            return res.status(400).json({
+                success: false,
+                message: 'Can only review completed stays',
+                canReview: false,
+                reason: 'BOOKING_NOT_COMPLETED'
+            });
+        }
+
+        // Check if review already exists
+        const existingReview = await Review.findOne({
+            user: req.user.id,
+            booking: bookingId
+        });
+
+        if (existingReview) {
+            return res.status(200).json({
+                success: true,
+                canReview: false,
+                reason: 'ALREADY_REVIEWED',
+                message: 'You have already reviewed this booking',
+                existingReview: {
+                    id: existingReview._id,
+                    title: existingReview.title,
+                    rating: existingReview.rating,
+                    createdAt: existingReview.createdAt,
+                    isApproved: existingReview.isApproved
+                }
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            canReview: true,
+            message: 'You can review this booking',
+            booking: {
+                id: booking._id,
+                bookingId: booking.bookingId,
+                room: booking.room,
+                checkOutDate: booking.bookingDates.checkOutDate
+            }
+        });
+
+    } catch (error) {
+        console.error('Can review booking error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Server Error'
+        });
+    }
+};
+
 module.exports = {
     createReview,
     getReviews,
@@ -351,5 +433,6 @@ module.exports = {
     updateReview,
     deleteReview,
     moderateReview,
-    getPendingReviews
+    getPendingReviews,
+    canReviewBooking
 };

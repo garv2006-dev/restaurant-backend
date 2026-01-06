@@ -12,7 +12,8 @@ const {
     updateReview,
     deleteReview,
     moderateReview,
-    getPendingReviews
+    getPendingReviews,
+    canReviewBooking
 } = require('../controllers/reviewController');
 
 // Public routes
@@ -22,6 +23,7 @@ router.get('/', getReviews);
 router.use(protect);
 router.post('/', createReview);
 router.get('/my-reviews', getMyReviews);
+router.get('/can-review/:bookingId', canReviewBooking);
 router.put('/:id', updateReview);
 router.delete('/:id', deleteReview);
 
