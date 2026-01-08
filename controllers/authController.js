@@ -261,26 +261,26 @@ If you did not request this, please ignore this email.
 
         try {
             // Non-blocking email sending - fire and forget
-            if (sendEmail.sendEmailAsync) {
-                console.log("✅ IF PART CALLED")
-                await sendEmail.sendEmailAsync({
-                    email: user.email,
-                    subject: 'Password Reset Request',
-                    message,
-                    html: htmlMessage
-                });
-            } else {
-                console.log("✅ ELSE PART CALLED")
+            // if (sendEmail.sendEmailAsync) {
+            //     console.log("✅ IF PART CALLED")
+            //     await sendEmail.sendEmailAsync({
+            //         email: user.email,
+            //         subject: 'Password Reset Request',
+            //         message,
+            //         html: htmlMessage
+            //     });
+            // } else {
+            console.log("✅ ELSE PART CALLED")
 
 
-                // Fallback for older implementation
-                await sendEmail({
-                    email: user.email,
-                    subject: 'Password Reset Request',
-                    message,
-                    html: htmlMessage
-                })
-            }
+            // Fallback for older implementation
+            await sendEmail({
+                email: user.email,
+                subject: 'Password Reset Request',
+                message,
+                html: htmlMessage
+            })
+            // }
 
             res.status(200).json({
                 success: true,
