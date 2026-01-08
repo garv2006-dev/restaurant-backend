@@ -13,7 +13,7 @@ const log = (level, message, data = {}) => {
 const validateEmailConfig = () => {
     const emailUser = process.env.EMAIL_USER;
     const emailPass = process.env.EMAIL_PASS;
-    
+
     if (!emailUser || !emailPass) {
         log('ERROR', 'EMAIL_USER or EMAIL_PASS is missing', {
             emailUserExists: !!emailUser,
@@ -22,7 +22,7 @@ const validateEmailConfig = () => {
         });
         return false;
     }
-    
+
     log('INFO', 'Email configuration validated', {
         emailUser: emailUser.substring(0, 5) + '***',
         nodeEnv: process.env.NODE_ENV
@@ -35,9 +35,9 @@ const getTransporter = () => {
     if (transporter) {
         return transporter;
     }
-    
+
     log('INFO', 'Creating new email transporter', { service: 'gmail' });
-    
+
     transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
         port: 587,
@@ -46,9 +46,9 @@ const getTransporter = () => {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS // Must be App Password for Gmail, not regular password
         },
-        connectionTimeout: 10000, // 10 seconds
-        socketTimeout: 10000,     // 10 seconds
-        greetingTimeout: 10000,
+        connectionTimeout: 1000000, // 10 seconds
+        socketTimeout: 1000000,     // 10 seconds
+        greetingTimeout: 1000000,
         tls: {
             rejectUnauthorized: false // For production, set to true if you have proper SSL setup
         },
@@ -60,7 +60,7 @@ const getTransporter = () => {
         logger: !isProduction, // Disable logger in production
         debug: !isProduction   // Disable debug in production
     });
-    
+
     // Test connection
     transporter.verify((error, success) => {
         if (error) {
@@ -73,7 +73,7 @@ const getTransporter = () => {
             log('INFO', 'SMTP Server Connected Successfully', { service: 'gmail' });
         }
     });
-    
+
     return transporter;
 };
 
@@ -83,7 +83,7 @@ const sendEmailAsync = (options) => {
         log('ERROR', 'Email not sent - missing credentials', { to: options.email });
         return Promise.resolve(null);
     }
-    
+
     if (!options.email || !options.subject) {
         log('ERROR', 'Email not sent - missing required fields', {
             email: options.email,
@@ -91,9 +91,9 @@ const sendEmailAsync = (options) => {
         });
         return Promise.resolve(null);
     }
-    
+
     log('INFO', 'Sending email (async/non-blocking)', { to: options.email, subject: options.subject });
-    
+
     // Fire-and-forget pattern
     getTransporter().sendMail(
         {
@@ -112,7 +112,7 @@ const sendEmailAsync = (options) => {
                     code: error.code,
                     command: error.command
                 });
-                
+
                 // For Gmail: common errors
                 if (error.message.includes('Invalid login')) {
                     log('ERROR', 'GMAIL AUTH ERROR - Check EMAIL_PASS (use App Password, not regular password)', {
@@ -128,7 +128,7 @@ const sendEmailAsync = (options) => {
             }
         }
     );
-    
+
     // Return immediately - don't wait for email
     return Promise.resolve(null);
 };
@@ -140,7 +140,7 @@ const sendEmailSync = async (options) => {
             log('ERROR', 'Email not sent - missing credentials', { to: options.email });
             return null;
         }
-        
+
         if (!options.email || !options.subject) {
             log('ERROR', 'Email not sent - missing required fields', {
                 email: options.email,
@@ -148,9 +148,9 @@ const sendEmailSync = async (options) => {
             });
             return null;
         }
-        
+
         log('INFO', 'Sending email (sync/blocking)', { to: options.email, subject: options.subject });
-        
+
         const info = await getTransporter().sendMail({
             from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
             to: options.email,
@@ -158,7 +158,7 @@ const sendEmailSync = async (options) => {
             text: options.message,
             html: options.html || options.message.replace(/\n/g, '<br>')
         });
-        
+
         log('INFO', 'Email sent successfully (sync)', {
             to: options.email,
             messageId: info.messageId,
@@ -173,14 +173,14 @@ const sendEmailSync = async (options) => {
             code: error.code,
             command: error.command
         });
-        
+
         // For Gmail: common errors
         if (error.message.includes('Invalid login')) {
             log('ERROR', 'GMAIL AUTH ERROR - Check EMAIL_PASS (use App Password, not regular password)', {
                 emailUser: process.env.EMAIL_USER.substring(0, 5) + '***'
             });
         }
-        
+
         return null;
     }
 };

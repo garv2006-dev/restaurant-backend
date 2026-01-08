@@ -51,12 +51,12 @@ app.use(helmet({
 
 // CORS configuration (allow common localhost ports in dev)
 const defaultOrigins = [
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:3002',
-  'http://127.0.0.1:3000',
-  'http://127.0.0.1:3001',
-  'http://127.0.0.1:3002',
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://localhost:3002',
+    'http://127.0.0.1:3000',
+    'http://127.0.0.1:3001',
+    'http://127.0.0.1:3002',
 ];
 const envOrigin = process.env.FRONTEND_URL ? [process.env.FRONTEND_URL] : [];
 const allowedOrigins = [...envOrigin, ...defaultOrigins];
@@ -64,23 +64,23 @@ const allowedOrigins = [...envOrigin, ...defaultOrigins];
 console.log('🌐 CORS allowed origins:', allowedOrigins);
 
 app.use(cors({
-  origin: (origin, callback) => {
-    // allow requests with no origin like mobile apps or curl
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    console.warn('⚠️  CORS blocked origin:', origin);
-    return callback(new Error('CORS not allowed for origin: ' + origin));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Range', 'X-Content-Range'],
-  maxAge: 86400, // 24 hours
+    origin: (origin, callback) => {
+        // allow requests with no origin like mobile apps or curl
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        console.warn('⚠️  CORS blocked origin:', origin);
+        return callback(new Error('CORS not allowed for origin: ' + origin));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range'],
+    maxAge: 86400, // 24 hours
 }));
 
 // Prevent parameter pollution
 app.use(hpp({
-  whitelist: ['sort', 'limit', 'page', 'fields']
+    whitelist: ['sort', 'limit', 'page', 'fields']
 }));
 
 // Environment flag
@@ -89,7 +89,7 @@ const isDev = (process.env.NODE_ENV || 'development') === 'development';
 // Rate limiting - more specific for auth routes
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 100 : 20, // development: 100 req/15min, production: 20 req/15min per IP
+    max: isDev ? 1000 : 100, // relaxed limit: 100 req/15min per IP in production
     message: {
         success: false,
         message: 'Too many authentication attempts, please try again later.'
@@ -103,7 +103,7 @@ const authLimiter = rateLimit({
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
     // In development, disable general limiter to avoid blocking local testing
-    max: isDev ? 100000 : 100, // production: 100 req/15min per IP
+    max: isDev ? 1000000 : 3000, // production: 3000 req/15min per IP (greatly increased for dashboard usage)
     message: {
         success: false,
         message: 'Too many requests from this IP, please try again later.'
@@ -145,7 +145,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.get('/health', async (req, res) => {
     const dbStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
     const dbLatency = mongoose.connection.readyState === 1 ? 'healthy' : 'unhealthy';
-    
+
     res.status(200).json({
         status: 'OK',
         timestamp: new Date().toISOString(),
@@ -202,7 +202,7 @@ console.log('✅ Socket.io initialized');
 process.on('unhandledRejection', (err, promise) => {
     console.error('❌ Unhandled Promise Rejection:', err.message);
     console.error('Stack:', err.stack);
-    
+
     // Don't exit immediately in development
     if (process.env.NODE_ENV === 'production') {
         // Close server & exit process in production
@@ -218,7 +218,7 @@ process.on('unhandledRejection', (err, promise) => {
 process.on('uncaughtException', (err) => {
     console.error('❌ Uncaught Exception:', err.message);
     console.error('Stack:', err.stack);
-    
+
     // Don't exit immediately in development
     if (process.env.NODE_ENV === 'production') {
         console.error('Shutting down the server due to uncaught exception');
