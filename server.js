@@ -89,15 +89,15 @@ const isDev = (process.env.NODE_ENV || 'development') === 'development';
 // Rate limiting - more specific for auth routes
 const authLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 50 : 5, // development: 50 req/15min, production: 5 req/15min per IP
+    max: isDev ? 100 : 20, // development: 100 req/15min, production: 20 req/15min per IP
     message: {
         success: false,
         message: 'Too many authentication attempts, please try again later.'
     },
     standardHeaders: true,
     legacyHeaders: false,
-    // Skip applying the limiter entirely in development
-    skip: () => isDev && process.env.SKIP_AUTH_RATE_LIMIT === 'true'
+    // Skip applying the limiter entirely in development or when explicitly disabled
+    skip: () => isDev || process.env.DISABLE_AUTH_RATE_LIMIT === 'true'
 });
 
 const generalLimiter = rateLimit({
