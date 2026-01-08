@@ -40,6 +40,7 @@ const getTransporter = () => {
 
     transporter = nodemailer.createTransport({
         host: 'smtp.gmail.com',
+        service: 'gmail',
         port: 587,
         secure: false, // Use STARTTLS, not SSL
         auth: {
@@ -50,7 +51,7 @@ const getTransporter = () => {
         socketTimeout: 1000000,     // 10 seconds
         greetingTimeout: 1000000,
         tls: {
-            rejectUnauthorized: false // For production, set to true if you have proper SSL setup
+            rejectUnauthorized: true // For production, set to true if you have proper SSL setup
         },
         pool: {
             maxConnections: 3,
