@@ -93,7 +93,7 @@ const sendEmailAsync = async (options) => {
         const api = new SibApiV3Sdk.TransactionalEmailsApi();
 
         const response = await api.sendTransacEmail({
-            sender: { email: process.env.EMAIL_FROM, name: "My App" },
+            sender: { email: process.env.EMAIL_FROM, name: "Luxury Hotel" },
             to: [{ email: options.email }],
             subject: options.subject,
             htmlContent: options.html || options.message.replace(/\n/g, '<br>')
