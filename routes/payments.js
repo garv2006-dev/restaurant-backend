@@ -13,7 +13,9 @@ const {
     getPayment,
     getAllPayments,
     processRefund,
-    generateInvoice
+    generateInvoice,
+    createRazorpayOrder,
+    verifyRazorpayPayment
 } = require('../controllers/paymentController');
 
 // All routes require authentication
@@ -26,6 +28,10 @@ router.post('/create', createPayment);
 router.get('/', getPayments);
 router.get('/:id', getPayment);
 router.get('/:id/invoice', generateInvoice);
+
+// Razorpay routes
+router.post('/razorpay/create-order', createRazorpayOrder);
+router.post('/razorpay/verify', verifyRazorpayPayment);
 
 // Admin routes
 router.get('/admin/all', authorize('admin'), getAllPayments);

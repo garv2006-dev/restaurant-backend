@@ -18,7 +18,7 @@ const { createRoomBookingNotification, createPaymentNotification } = require("./
 const validateDiscountForBooking = async (req, res) => {
   try {
     const { discountCode, subtotal } = req.body;
-    
+
     if (!discountCode) {
       return res.status(400).json({
         success: false,
@@ -34,9 +34,9 @@ const validateDiscountForBooking = async (req, res) => {
     }
 
     // Find discount by code
-    const discount = await Discount.findOne({ 
+    const discount = await Discount.findOne({
       code: discountCode.toUpperCase(),
-      isActive: true 
+      isActive: true
     });
 
     if (!discount) {
@@ -89,7 +89,7 @@ const validateDiscountForBooking = async (req, res) => {
 
     // Calculate discount amount
     const discountAmount = discount.calculateDiscount(subtotal);
-    
+
     if (discountAmount === 0) {
       return res.status(400).json({
         success: false,
@@ -155,7 +155,7 @@ const createBooking = async (req, res) => {
     // Validate guest capacity
     const totalGuests = (guestDetails.totalAdults || 0) + (guestDetails.totalChildren || 0);
     const maxCapacity = (room.capacity.adults || 0) + (room.capacity.children || 0);
-    
+
     if (totalGuests > maxCapacity) {
       return res.status(400).json({
         success: false,
@@ -212,13 +212,13 @@ const createBooking = async (req, res) => {
     // Handle discount application
     let appliedDiscount = null;
     let discountAmount = 0;
-    
+
     if (discountCode) {
       try {
         // Find and validate discount
-        const discount = await Discount.findOne({ 
+        const discount = await Discount.findOne({
           code: discountCode.toUpperCase(),
-          isActive: true 
+          isActive: true
         });
 
         if (!discount) {
@@ -267,7 +267,7 @@ const createBooking = async (req, res) => {
 
         // Calculate discount
         discountAmount = discount.calculateDiscount(subtotal);
-        
+
         if (discountAmount > 0) {
           appliedDiscount = {
             discountId: discount._id,
@@ -290,11 +290,11 @@ const createBooking = async (req, res) => {
     // Handle redemption code application
     let appliedRedemption = null;
     let redemptionDiscountAmount = 0;
-    
+
     if (redemptionCode) {
       try {
         // Find and validate redemption
-        const redemption = await RewardRedemption.findOne({ 
+        const redemption = await RewardRedemption.findOne({
           redemptionCode: redemptionCode.toUpperCase(),
           user: req.user.id
         });
@@ -309,16 +309,16 @@ const createBooking = async (req, res) => {
         if (!redemption.isValidForUse()) {
           return res.status(400).json({
             success: false,
-            message: redemption.status === 'Used' ? 'Redemption code has already been used' : 
-                     redemption.status === 'Expired' ? 'Redemption code has expired' :
-                     'Redemption code is not valid',
+            message: redemption.status === 'Used' ? 'Redemption code has already been used' :
+              redemption.status === 'Expired' ? 'Redemption code has expired' :
+                'Redemption code is not valid',
           });
         }
 
         // Calculate redemption discount
         const reward = redemption.reward;
         const subtotalAfterDiscount = subtotal - discountAmount; // Apply after regular discount
-        
+
         if (reward.discountType === 'percentage') {
           redemptionDiscountAmount = (subtotalAfterDiscount * reward.discountValue) / 100;
           if (reward.maxDiscount && redemptionDiscountAmount > reward.maxDiscount) {
@@ -327,7 +327,7 @@ const createBooking = async (req, res) => {
         } else if (reward.discountType === 'fixed') {
           redemptionDiscountAmount = Math.min(reward.discountValue, subtotalAfterDiscount);
         }
-        
+
         if (redemptionDiscountAmount > 0) {
           appliedRedemption = {
             redemptionId: redemption.redemptionId,
@@ -406,7 +406,7 @@ const createBooking = async (req, res) => {
     // If redemption was applied, mark it as used
     if (appliedRedemption) {
       try {
-        const redemption = await RewardRedemption.findOne({ 
+        const redemption = await RewardRedemption.findOne({
           redemptionCode: appliedRedemption.code,
           user: req.user.id
         });
@@ -448,35 +448,49 @@ const createBooking = async (req, res) => {
       const paymentMethod = paymentDetails?.method || "Cash";
       const normalizedPaymentMethod = typeof paymentMethod === 'string' ? paymentMethod.trim() : paymentMethod;
       const isCashPayment = normalizedPaymentMethod === "Cash" || normalizedPaymentMethod === "cash" || normalizedPaymentMethod === "COD";
-      
+
+      // Check if this is a Razorpay payment (netbanking, wallet, card, upi, emi, etc.)
+      const razorpayMethods = ['netbanking', 'wallet', 'card', 'upi', 'emi', 'cardless_emi', 'paylater'];
+      const isRazorpayPayment = razorpayMethods.includes(normalizedPaymentMethod.toLowerCase());
+
       // Build payment details object based on payment method
       const paymentDetailsObj = {};
-      
-      if (normalizedPaymentMethod === "Card") {
+
+      if (normalizedPaymentMethod === "Card" || normalizedPaymentMethod === "card") {
         // Store card payment details
         paymentDetailsObj.cardLast4 = paymentDetails.cardLast4 || null;
         paymentDetailsObj.cardBrand = paymentDetails.cardBrand || null;
         paymentDetailsObj.cardHolderName = paymentDetails.cardHolderName || null;
-      } else if (normalizedPaymentMethod === "UPI") {
+      } else if (normalizedPaymentMethod === "UPI" || normalizedPaymentMethod === "upi") {
         // Store UPI payment details
         paymentDetailsObj.upiId = paymentDetails.upiId || null;
-      } else if (normalizedPaymentMethod === "Online") {
+      } else if (normalizedPaymentMethod === "Online" || normalizedPaymentMethod === "netbanking") {
         // Store online banking details
         paymentDetailsObj.bankName = paymentDetails.bankName || null;
+      } else if (normalizedPaymentMethod === "wallet") {
+        // Store wallet details
+        paymentDetailsObj.walletProvider = paymentDetails.walletProvider || 'Unknown';
       }
-      
+
+      // Add email and contact for Razorpay payments
+      if (isRazorpayPayment) {
+        paymentDetailsObj.email = paymentDetails.email || guestDetails.primaryGuest.email;
+        paymentDetailsObj.contact = paymentDetails.contact || guestDetails.primaryGuest.phone;
+      }
+
       const paymentData = {
         booking: booking._id,
         user: req.user.id,
         amount: totalAmount,
         currency: 'INR',
-        paymentMethod: normalizedPaymentMethod,
+        paymentMethod: normalizedPaymentMethod, // This will be: netbanking, card, upi, wallet, etc.
         method: normalizedPaymentMethod, // Alias field
-        gateway: isCashPayment ? "Manual" : "Manual", // Can be updated to actual gateway later
-        paymentGateway: isCashPayment ? "Manual" : "Manual",
+        gateway: isRazorpayPayment ? "Razorpay" : (isCashPayment ? "Manual" : "Manual"),
+        paymentGateway: isRazorpayPayment ? "Razorpay" : (isCashPayment ? "Manual" : "Manual"),
         status: "Completed", // All payments are completed immediately
         transactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
         gatewayTransactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
+        gatewayOrderId: paymentDetails?.orderId || null, // Razorpay order ID
         paymentDetails: paymentDetailsObj,
         billingAddress: {
           firstName: guestDetails.primaryGuest.name.split(' ')[0] || '',
@@ -506,12 +520,16 @@ const createBooking = async (req, res) => {
           guests: `${guestDetails.totalAdults} adults, ${guestDetails.totalChildren} children`,
           discountApplied: appliedDiscount ? true : false,
           discountCode: appliedDiscount?.code || null,
-          discountAmount: discountAmount || 0
+          discountAmount: discountAmount || 0,
+          razorpayPayment: isRazorpayPayment,
+          paymentMethodType: normalizedPaymentMethod
         }
       };
 
       payment = await Payment.create(paymentData);
       console.log('Payment record created successfully:', payment.paymentId);
+      console.log('Payment method stored:', normalizedPaymentMethod);
+      console.log('Gateway:', isRazorpayPayment ? 'Razorpay' : 'Manual');
 
       // Update booking with payment reference
       // Payment is completed but booking status remains Pending until admin confirms
@@ -550,17 +568,17 @@ const createBooking = async (req, res) => {
     // Send confirmation email
     try {
       const htmlMessage = generateBookingConfirmationEmail(
-        booking, 
-        guestDetails, 
-        checkIn, 
-        checkOut, 
-        nights, 
-        roomPrice, 
-        subtotal, 
-        gst, 
-        totalAmount, 
-        extraServices, 
-        specialRequests, 
+        booking,
+        guestDetails,
+        checkIn,
+        checkOut,
+        nights,
+        roomPrice,
+        subtotal,
+        gst,
+        totalAmount,
+        extraServices,
+        specialRequests,
         paymentDetails
       );
 
@@ -683,7 +701,7 @@ const getBookings = async (req, res) => {
 
     const bookings = await Booking.find(query)
       .populate("room", "_id id name type images")
-            .sort({ createdAt: -1 })
+      .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
 
@@ -727,7 +745,7 @@ const getAllBookings = async (req, res) => {
     const bookings = await Booking.find(query)
       .populate("user", "name email phone")
       .populate("room", "_id id name type images")
-            .sort({ createdAt: -1 })
+      .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
 
@@ -917,7 +935,7 @@ const cancelBooking = async (req, res) => {
     console.log('Can cancel booking:', canCancel);
     console.log('Booking check-in date:', booking.bookingDates.checkInDate);
     console.log('Current time:', new Date());
-    
+
     if (!canCancel) {
       console.log('Booking cannot be cancelled - status:', booking.status);
       return res.status(400).json({
@@ -958,11 +976,10 @@ const cancelBooking = async (req, res) => {
                 - Cancellation Fee: $${cancellationFee.toFixed(2)}
                 - Refund Amount: $${refundAmount.toFixed(2)}
                 
-                ${
-                  refundAmount > 0
-                    ? "Your refund will be processed within 5-7 business days."
-                    : ""
-                }
+                ${refundAmount > 0
+          ? "Your refund will be processed within 5-7 business days."
+          : ""
+        }
                 
                 Best regards,
                 Hotel Booking Team
@@ -1021,7 +1038,7 @@ const cancelBooking = async (req, res) => {
   } catch (error) {
     console.error("Cancel booking error:", error);
     console.error("Error stack:", error.stack);
-    
+
     // Provide more specific error messages
     let errorMessage = "Server Error";
     if (error.name === 'ValidationError') {
@@ -1031,7 +1048,7 @@ const cancelBooking = async (req, res) => {
     } else if (error.message) {
       errorMessage = error.message;
     }
-    
+
     res.status(500).json({
       success: false,
       message: errorMessage,
@@ -1298,7 +1315,7 @@ const checkOutBooking = async (req, res) => {
       const { generateCheckOutEmail } = require("../utils/emailTemplates");
       const htmlMessage = generateCheckOutEmail(booking, booking.checkOutDetails);
 
-      const additionalChargesText = additionalCharges && additionalCharges.length > 0 
+      const additionalChargesText = additionalCharges && additionalCharges.length > 0
         ? `\nADDITIONAL CHARGES:\n${additionalCharges.map(charge => `- ${charge.type}: ${charge.description} - ₹${charge.amount.toFixed(2)}`).join('\n')}`
         : '';
 

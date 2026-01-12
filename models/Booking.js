@@ -146,7 +146,7 @@ const BookingSchema = new mongoose.Schema({
         },
         method: {
             type: String,
-            enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Cash', 'BankTransfer', 'Card', 'Online']
+            enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Cash', 'BankTransfer', 'Card', 'Online', 'Razorpay', 'netbanking', 'wallet', 'emi', 'cardless_emi', 'paylater']
         },
         transactionId: String,
         paidAmount: {
@@ -236,23 +236,23 @@ BookingSchema.index({ 'bookingDates.checkInDate': 1 });
 BookingSchema.index({ 'bookingDates.checkOutDate': 1 });
 
 // Generate booking ID before saving
-BookingSchema.pre('save', function(next) {
+BookingSchema.pre('save', function (next) {
     if (!this.bookingId) {
         const timestamp = Date.now().toString(36);
         const randomString = Math.random().toString(36).substr(2, 5);
         this.bookingId = `BK${timestamp}${randomString}`.toUpperCase();
     }
-    
+
     // Calculate nights
     const checkIn = new Date(this.bookingDates.checkInDate);
     const checkOut = new Date(this.bookingDates.checkOutDate);
     this.bookingDates.nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-    
+
     next();
 });
 
 // Validation: Check-out date must be after check-in date
-BookingSchema.pre('save', function(next) {
+BookingSchema.pre('save', function (next) {
     if (this.bookingDates.checkOutDate <= this.bookingDates.checkInDate) {
         next(new Error('Check-out date must be after check-in date'));
     }
@@ -260,55 +260,55 @@ BookingSchema.pre('save', function(next) {
 });
 
 // Method to calculate total amount
-BookingSchema.methods.calculateTotalAmount = function() {
+BookingSchema.methods.calculateTotalAmount = function () {
     let subtotal = this.pricing.roomPrice;
-    
+
     // Add extra services
     this.pricing.extraServices.forEach(service => {
         subtotal += service.price * service.quantity;
     });
-    
+
     this.pricing.subtotal = subtotal;
-    
+
     // Calculate taxes
     const taxAmount = this.pricing.taxes.gst + this.pricing.taxes.serviceTax + this.pricing.taxes.other;
-    
+
     // Apply discount
     let discountAmount = this.pricing.discount.amount;
     if (this.pricing.discount.percentage > 0) {
         discountAmount = (subtotal * this.pricing.discount.percentage) / 100;
     }
-    
+
     this.pricing.totalAmount = subtotal + taxAmount - discountAmount;
-    
+
     return this.pricing.totalAmount;
 };
 
 // Method to check if booking can be cancelled
-BookingSchema.methods.canBeCancelled = function() {
+BookingSchema.methods.canBeCancelled = function () {
     const now = new Date();
     const checkInDate = new Date(this.bookingDates.checkInDate);
     const hoursUntilCheckIn = (checkInDate - now) / (1000 * 60 * 60);
-    
+
     // More flexible cancellation policy:
     // - Can cancel if more than 2 hours before check-in and status is Pending or Confirmed
     // - Always allow cancellation for Pending bookings regardless of time
     if (this.status === 'Pending') {
         return true;
     }
-    
+
     // For Confirmed bookings, allow cancellation up to 2 hours before check-in
     return hoursUntilCheckIn > 2 && ['Confirmed'].includes(this.status);
 };
 
 // Method to calculate cancellation fee
-BookingSchema.methods.calculateCancellationFee = function() {
+BookingSchema.methods.calculateCancellationFee = function () {
     const now = new Date();
     const checkInDate = new Date(this.bookingDates.checkInDate);
     const hoursUntilCheckIn = (checkInDate - now) / (1000 * 60 * 60);
-    
+
     let feePercentage = 0;
-    
+
     // More flexible cancellation fee structure:
     if (hoursUntilCheckIn < 2) {
         feePercentage = 100; // No refund for last-minute cancellations
@@ -318,17 +318,17 @@ BookingSchema.methods.calculateCancellationFee = function() {
         feePercentage = 10; // 10% fee for cancellations within 24 hours
     }
     // else feePercentage = 0 (free cancellation for more than 24 hours)
-    
+
     // No fee for Pending bookings
     if (this.status === 'Pending') {
         feePercentage = 0;
     }
-    
+
     return (this.pricing.totalAmount * feePercentage) / 100;
 };
 
 // Static method to get booking statistics
-BookingSchema.statics.getBookingStats = async function(startDate, endDate) {
+BookingSchema.statics.getBookingStats = async function (startDate, endDate) {
     return this.aggregate([
         {
             $match: {
