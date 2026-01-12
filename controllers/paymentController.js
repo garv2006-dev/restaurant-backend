@@ -42,7 +42,7 @@ const createPaymentIntent = async (req, res) => {
         if (paymentMethod === 'stripe') {
             // Stripe payment intent
             const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-            
+
             paymentIntent = await stripe.paymentIntents.create({
                 amount: Math.round(booking.pricing.totalAmount * 100), // Convert to cents
                 currency: 'usd',
@@ -51,7 +51,7 @@ const createPaymentIntent = async (req, res) => {
                     userId: req.user.id
                 }
             });
-            
+
             clientSecret = paymentIntent.client_secret;
         } else if (paymentMethod === 'razorpay') {
             // Razorpay order
@@ -100,12 +100,12 @@ const createPaymentIntent = async (req, res) => {
 // @access  Private
 const confirmPayment = async (req, res) => {
     try {
-        const { 
-            bookingId, 
-            paymentMethod, 
-            transactionId, 
+        const {
+            bookingId,
+            paymentMethod,
+            transactionId,
             paymentIntentId,
-            amount 
+            amount
         } = req.body;
 
         // Find booking
@@ -125,7 +125,7 @@ const confirmPayment = async (req, res) => {
         if (paymentMethod === 'stripe') {
             const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
             const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-            
+
             if (paymentIntent.status === 'succeeded') {
                 paymentVerified = true;
                 paymentDetails = {
@@ -139,7 +139,7 @@ const confirmPayment = async (req, res) => {
             // Verify Razorpay payment signature
             const crypto = require('crypto');
             const razorpaySignature = req.headers['x-razorpay-signature'];
-            
+
             const body = JSON.stringify(req.body);
             const expectedSignature = crypto
                 .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
@@ -314,7 +314,7 @@ const getPayment = async (req, res) => {
 const processRefund = async (req, res) => {
     try {
         const { amount, reason } = req.body;
-        
+
         const payment = await Payment.findById(req.params.id)
             .populate('booking');
 
@@ -342,7 +342,7 @@ const processRefund = async (req, res) => {
                 payment_intent: payment.transactionId,
                 amount: Math.round(amount * 100)
             });
-            
+
             if (refund.status === 'succeeded') {
                 refundSuccess = true;
                 refundId = refund.id;
@@ -513,7 +513,7 @@ const createPayment = async (req, res) => {
         // Normalize payment method to handle case variations
         const normalizedPaymentMethod = typeof paymentMethod === 'string' ? paymentMethod.trim() : paymentMethod;
         const isCashPayment = normalizedPaymentMethod === "Cash" || normalizedPaymentMethod === "cash" || normalizedPaymentMethod === "COD";
-        
+
         const paymentData = {
             booking: bookingId,
             user: booking.user._id,
@@ -529,7 +529,7 @@ const createPayment = async (req, res) => {
         // Update booking status - all payments are marked as paid
         booking.paymentStatus = 'Paid';
         booking.status = 'Confirmed';
-        
+
         booking.paymentDetails = {
             method: normalizedPaymentMethod,
             paidAmount: amount || booking.pricing.totalAmount,
@@ -595,6 +595,133 @@ const getAllPayments = async (req, res) => {
     }
 };
 
+// @desc    Create Razorpay order
+// @route   POST /api/payments/razorpay/create-order
+// @access  Private
+const createRazorpayOrder = async (req, res) => {
+    try {
+        const { amount, currency = 'INR', bookingDetails } = req.body;
+
+        if (!amount || amount <= 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Valid amount is required'
+            });
+        }
+
+        // Check if Razorpay credentials are configured
+        if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+            return res.status(500).json({
+                success: false,
+                message: 'Razorpay credentials not configured'
+            });
+        }
+
+        const Razorpay = require('razorpay');
+        const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET
+        });
+
+        const options = {
+            amount: Math.round(amount * 100), // Convert to paise (smallest currency unit)
+            currency: currency,
+            receipt: `receipt_${Date.now()}`,
+            notes: {
+                userId: req.user.id,
+                userName: req.user.name,
+                userEmail: req.user.email,
+                ...bookingDetails
+            }
+        };
+
+        const order = await razorpay.orders.create(options);
+
+        res.status(200).json({
+            success: true,
+            data: {
+                orderId: order.id,
+                amount: order.amount,
+                currency: order.currency,
+                keyId: process.env.RAZORPAY_KEY_ID
+            }
+        });
+
+    } catch (error) {
+        console.error('Create Razorpay order error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Failed to create Razorpay order'
+        });
+    }
+};
+
+// @desc    Verify Razorpay payment
+// @route   POST /api/payments/razorpay/verify
+// @access  Private
+const verifyRazorpayPayment = async (req, res) => {
+    try {
+        const {
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            bookingData
+        } = req.body;
+
+        if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
+            return res.status(400).json({
+                success: false,
+                message: 'Missing required payment verification parameters'
+            });
+        }
+
+        // Verify payment signature
+        const crypto = require('crypto');
+        const hmac = crypto.createHmac('sha256', process.env.RAZORPAY_KEY_SECRET);
+        hmac.update(`${razorpay_order_id}|${razorpay_payment_id}`);
+        const generatedSignature = hmac.digest('hex');
+
+        if (generatedSignature !== razorpay_signature) {
+            return res.status(400).json({
+                success: false,
+                message: 'Payment verification failed - Invalid signature'
+            });
+        }
+
+        // Signature verified successfully
+        // Fetch payment details from Razorpay to get the exact amount
+        const Razorpay = require('razorpay');
+        const razorpay = new Razorpay({
+            key_id: process.env.RAZORPAY_KEY_ID,
+            key_secret: process.env.RAZORPAY_KEY_SECRET
+        });
+
+        const paymentDetails = await razorpay.payments.fetch(razorpay_payment_id);
+
+        res.status(200).json({
+            success: true,
+            message: 'Payment verified successfully',
+            data: {
+                orderId: razorpay_order_id,
+                paymentId: razorpay_payment_id,
+                amount: paymentDetails.amount / 100, // Convert from paise to rupees
+                currency: paymentDetails.currency,
+                status: paymentDetails.status,
+                method: paymentDetails.method,
+                email: paymentDetails.email,
+                contact: paymentDetails.contact
+            }
+        });
+
+    } catch (error) {
+        console.error('Verify Razorpay payment error:', error);
+        res.status(500).json({
+            success: false,
+            message: error.message || 'Payment verification failed'
+        });
+    }
+};
+
 module.exports = {
     createPaymentIntent,
     confirmPayment,
@@ -603,5 +730,7 @@ module.exports = {
     getPayment,
     getAllPayments,
     processRefund,
-    generateInvoice
+    generateInvoice,
+    createRazorpayOrder,
+    verifyRazorpayPayment
 };

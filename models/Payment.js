@@ -30,11 +30,11 @@ const PaymentSchema = new mongoose.Schema({
     paymentMethod: {
         type: String,
         required: true,
-        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer', 'Card', 'Online']
+        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer', 'Card', 'Online', 'netbanking', 'wallet', 'emi', 'cardless_emi', 'paylater']
     },
     method: {
         type: String,
-        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer', 'Card', 'Online']
+        enum: ['CreditCard', 'DebitCard', 'UPI', 'PayPal', 'Razorpay', 'Stripe', 'Cash', 'BankTransfer', 'Card', 'Online', 'netbanking', 'wallet', 'emi', 'cardless_emi', 'paylater']
     },
     paymentGateway: {
         type: String,
@@ -42,7 +42,7 @@ const PaymentSchema = new mongoose.Schema({
     },
     gatewayTransactionId: {
         type: String,
-        required: function() {
+        required: function () {
             return this.paymentGateway !== 'Manual';
         }
     },
@@ -182,78 +182,78 @@ PaymentSchema.index({ gatewayTransactionId: 1 });
 PaymentSchema.index({ 'refund.isRefunded': 1 });
 
 // Generate payment ID before saving
-PaymentSchema.pre('save', function(next) {
+PaymentSchema.pre('save', function (next) {
     if (!this.paymentId) {
         const timestamp = Date.now().toString(36);
         const randomString = Math.random().toString(36).substr(2, 5);
         this.paymentId = `PAY${timestamp}${randomString}`.toUpperCase();
     }
-    
+
     // Generate receipt number if payment is completed
     if (this.status === 'Completed' && !this.receipt.receiptNumber) {
         const receiptTimestamp = Date.now().toString(36);
         this.receipt.receiptNumber = `RCP${receiptTimestamp}`.toUpperCase();
     }
-    
+
     next();
 });
 
 // Method to process refund
-PaymentSchema.methods.processRefund = function(refundAmount, reason, refundedBy) {
+PaymentSchema.methods.processRefund = function (refundAmount, reason, refundedBy) {
     if (this.status !== 'Completed') {
         throw new Error('Can only refund completed payments');
     }
-    
+
     if (refundAmount > this.amount) {
         throw new Error('Refund amount cannot exceed payment amount');
     }
-    
+
     this.refund.refundAmount = refundAmount;
     this.refund.refundReason = reason;
     this.refund.refundedBy = refundedBy;
     this.refund.refundDate = new Date();
     this.refund.isRefunded = true;
     this.refund.refundStatus = 'Processing';
-    
+
     // Update payment status
     if (refundAmount === this.amount) {
         this.status = 'Refunded';
     } else {
         this.status = 'PartiallyRefunded';
     }
-    
+
     return this.save();
 };
 
 // Method to calculate net amount (after fees and taxes)
-PaymentSchema.methods.getNetAmount = function() {
+PaymentSchema.methods.getNetAmount = function () {
     const totalFees = this.fees.gatewayFee + this.fees.platformFee + this.fees.processingFee;
     const totalTaxes = this.taxes.gst + this.taxes.serviceTax + this.taxes.other;
     return this.amount - totalFees - totalTaxes;
 };
 
 // Method to check if payment can be refunded
-PaymentSchema.methods.canBeRefunded = function() {
+PaymentSchema.methods.canBeRefunded = function () {
     return this.status === 'Completed' && !this.refund.isRefunded;
 };
 
 // Method to retry failed payment
-PaymentSchema.methods.scheduleRetry = function() {
+PaymentSchema.methods.scheduleRetry = function () {
     if (this.retryCount >= this.maxRetries) {
         throw new Error('Maximum retry attempts reached');
     }
-    
+
     this.retryCount += 1;
-    
+
     // Schedule next retry (exponential backoff)
     const backoffMinutes = Math.pow(2, this.retryCount) * 5; // 5, 10, 20 minutes
     this.nextRetryAt = new Date(Date.now() + (backoffMinutes * 60 * 1000));
-    
+
     return this.save();
 };
 
 // Static method to get payment statistics
-PaymentSchema.statics.getPaymentStats = async function(startDate, endDate) {
+PaymentSchema.statics.getPaymentStats = async function (startDate, endDate) {
     return this.aggregate([
         {
             $match: {
@@ -275,7 +275,7 @@ PaymentSchema.statics.getPaymentStats = async function(startDate, endDate) {
 };
 
 // Static method to get daily revenue
-PaymentSchema.statics.getDailyRevenue = async function(startDate, endDate) {
+PaymentSchema.statics.getDailyRevenue = async function (startDate, endDate) {
     return this.aggregate([
         {
             $match: {
@@ -304,7 +304,7 @@ PaymentSchema.statics.getDailyRevenue = async function(startDate, endDate) {
 };
 
 // Static method to get payment method distribution
-PaymentSchema.statics.getPaymentMethodStats = async function(startDate, endDate) {
+PaymentSchema.statics.getPaymentMethodStats = async function (startDate, endDate) {
     return this.aggregate([
         {
             $match: {
