@@ -100,12 +100,13 @@ const createPaymentIntent = async (req, res) => {
 // @access  Private
 const confirmPayment = async (req, res) => {
     try {
-        const { 
-            bookingId, 
-            paymentMethod, 
-            transactionId, 
-            paymentIntentId,
-            amount 
+        const {
+            bookingId,
+            paymentMethod,
+            razorpay_order_id,
+            razorpay_payment_id,
+            razorpay_signature,
+            amount
         } = req.body;
 
         // Find booking
@@ -118,102 +119,148 @@ const confirmPayment = async (req, res) => {
             });
         }
 
-        // Verify payment based on method
-        let paymentVerified = false;
-        let paymentDetails = {};
+        // Find payment record
+        const payment = await Payment.findOne({ booking: bookingId });
 
-        if (paymentMethod === 'stripe') {
-            const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-            const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
-            
-            if (paymentIntent.status === 'succeeded') {
-                paymentVerified = true;
-                paymentDetails = {
-                    method: 'CreditCard',
-                    transactionId: paymentIntent.id,
-                    paidAmount: amount,
-                    paymentDate: new Date()
-                };
-            }
-        } else if (paymentMethod === 'razorpay') {
-            // Verify Razorpay payment signature
+        if (!payment) {
+            return res.status(404).json({
+                success: false,
+                message: 'Payment record not found'
+            });
+        }
+
+        // Idempotency check: If payment already completed, return success
+        if (payment.status === 'Completed' && booking.status === 'Confirmed') {
+            return res.status(200).json({
+                success: true,
+                message: 'Payment already verified and booking confirmed',
+                data: {
+                    bookingId: booking._id,
+                    paymentId: payment._id,
+                    status: 'Confirmed'
+                }
+            });
+        }
+
+        // Verify Razorpay payment signature
+        let paymentVerified = false;
+
+        if (paymentMethod === 'razorpay') {
             const crypto = require('crypto');
-            const razorpaySignature = req.headers['x-razorpay-signature'];
-            
-            const body = JSON.stringify(req.body);
+
+            // Correct Razorpay signature verification
+            const text = razorpay_order_id + "|" + razorpay_payment_id;
             const expectedSignature = crypto
                 .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-                .update(body)
+                .update(text)
                 .digest('hex');
 
-            if (razorpaySignature === expectedSignature) {
+            if (razorpay_signature === expectedSignature) {
                 paymentVerified = true;
-                paymentDetails = {
-                    method: 'UPI',
-                    transactionId,
-                    paidAmount: amount,
-                    paymentDate: new Date()
-                };
             }
         }
 
         if (!paymentVerified) {
             return res.status(400).json({
                 success: false,
-                message: 'Payment verification failed'
+                message: 'Invalid payment signature'
             });
         }
 
-        // Create payment record
-        const payment = await Payment.create({
-            booking: bookingId,
-            user: booking.user._id,
-            amount: amount,
-            paymentMethod: paymentDetails.method,
-            transactionId: paymentDetails.transactionId,
-            gateway: paymentMethod,
-            status: 'Completed'
-        });
+        // Update payment record
+        payment.status = 'Completed';
+        payment.transactionId = razorpay_payment_id;
+        payment.gatewayTransactionId = razorpay_payment_id;
+        payment.gatewayPaymentId = razorpay_payment_id;
+        payment.gatewaySignature = razorpay_signature;
+        payment.paymentDate = new Date();
+        await payment.save();
 
         // Update booking
         booking.paymentStatus = 'Paid';
         booking.status = 'Confirmed';
-        booking.paymentDetails = paymentDetails;
+        booking.paymentDetails.transactionId = razorpay_payment_id;
+        booking.paymentDetails.paidAmount = amount;
+        booking.paymentDetails.paymentDate = new Date();
         await booking.save();
+
+        // Release room lock
+        const Room = require('../models/Room');
+        const room = await Room.findById(booking.room);
+        if (room) {
+            try {
+                await room.unlockRoom();
+            } catch (unlockError) {
+                console.error('Room unlock error:', unlockError);
+                // Continue even if unlock fails
+            }
+        }
 
         // Send confirmation email
         try {
+            const checkIn = new Date(booking.bookingDates.checkInDate);
+            const checkOut = new Date(booking.bookingDates.checkOutDate);
+            const nights = booking.bookingDates.nights;
+
             const emailMessage = `
-                Dear ${booking.guestDetails.primaryGuest.name},
-                
-                Your payment has been successfully processed!
-                
-                Payment Details:
-                - Booking ID: ${booking.bookingId}
-                - Amount: $${amount.toFixed(2)}
-                - Transaction ID: ${paymentDetails.transactionId}
-                - Payment Date: ${paymentDetails.paymentDate.toDateString()}
-                
-                Your booking is now confirmed. We look forward to hosting you!
-                
-                Best regards,
-                Hotel Booking Team
+Dear ${booking.guestDetails.primaryGuest.name},
+
+Great news! Your payment has been successfully processed and your booking is CONFIRMED!
+
+BOOKING DETAILS:
+- Booking ID: ${booking.bookingId}
+- Status: CONFIRMED ✓
+- Room: ${room.name} (${room.type})
+- Check-in Date: ${checkIn.toDateString()}
+- Check-out Date: ${checkOut.toDateString()}
+- Number of Nights: ${nights}
+- Total Guests: ${booking.guestDetails.totalAdults} Adult(s), ${booking.guestDetails.totalChildren} Child(ren)
+
+PAYMENT INFORMATION:
+- Total Amount: ₹${amount.toFixed(2)}
+- Payment ID: ${razorpay_payment_id}
+- Payment Status: Paid
+- Payment Date: ${new Date().toDateString()}
+
+We look forward to welcoming you at our hotel!
+
+If you have any questions or need to make changes, please contact us at:
+- Email: concierge@luxuryhotel.com
+- Phone: +1 (555) 123-4567
+
+Best regards,
+Luxury Hotel Team
             `;
 
             await sendEmail({
                 email: booking.guestDetails.primaryGuest.email,
-                subject: `Payment Confirmation - ${booking.bookingId}`,
+                subject: `✅ Payment Confirmed - Booking ${booking.bookingId} | Luxury Hotel`,
                 message: emailMessage
             });
         } catch (emailError) {
             console.error('Email sending error:', emailError);
         }
 
+        // Emit real-time notifications
+        try {
+            const { emitUserNotification } = require('../config/socket');
+            emitUserNotification(booking.user._id.toString(), {
+                title: "✅ Payment Successful!",
+                message: `Your payment for booking ${booking.bookingId} has been confirmed`,
+                type: "success",
+                bookingId: booking.bookingId,
+            });
+        } catch (notificationError) {
+            console.error("Notification emission error:", notificationError);
+        }
+
         res.status(200).json({
             success: true,
+            message: 'Payment verified and booking confirmed',
             data: {
-                payment,
-                booking
+                bookingId: booking._id,
+                paymentId: payment._id,
+                status: 'Confirmed'
             }
         });
 

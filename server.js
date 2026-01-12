@@ -29,6 +29,7 @@ const uploadRoutes = require('./routes/upload');
 const customerRoutes = require('./routes/customerRoutes');
 const notificationRoutes = require('./routes/notifications');
 const contactRoutes = require('./routes/contact');
+const webhookRoutes = require('./routes/webhookRoutes');
 
 const app = express();
 
@@ -118,6 +119,9 @@ const generalLimiter = rateLimit({
 app.use('/api/', generalLimiter);
 app.use('/api/auth', authLimiter);
 
+// Webhook routes (must be before bodyParser for raw body access)
+app.use('/api/webhooks', webhookRoutes);
+
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
@@ -197,6 +201,10 @@ const server = app.listen(PORT, () => {
 // Initialize Socket.io AFTER server starts
 initializeSocket(server);
 console.log('✅ Socket.io initialized');
+
+// Initialize cron jobs
+const { startBookingCleanupJob } = require('./utils/cronJobs');
+startBookingCleanupJob();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {

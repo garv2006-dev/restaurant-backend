@@ -11,6 +11,7 @@ const {
   emitUserNotification,
 } = require("../config/socket");
 const { createRoomBookingNotification, createPaymentNotification } = require("./notificationController");
+const Razorpay = require("razorpay");
 
 // @desc    Validate discount code for booking
 // @route   POST /api/bookings/validate-discount
@@ -193,6 +194,16 @@ const createBooking = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Room is not available for selected dates",
+      });
+    }
+
+    // Lock room for 15 minutes during payment
+    try {
+      await room.lockRoom(req.user.id, 15);
+    } catch (lockError) {
+      return res.status(409).json({
+        success: false,
+        message: "Room no longer available",
       });
     }
 
@@ -470,13 +481,16 @@ const createBooking = async (req, res) => {
         user: req.user.id,
         amount: totalAmount,
         currency: 'INR',
-        paymentMethod: normalizedPaymentMethod,
-        method: normalizedPaymentMethod, // Alias field
-        gateway: isCashPayment ? "Manual" : "Manual", // Can be updated to actual gateway later
-        paymentGateway: isCashPayment ? "Manual" : "Manual",
-        status: "Completed", // All payments are completed immediately
-        transactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
-        gatewayTransactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
+        paymentMethod: 'razorpay',
+        method: 'razorpay', // Alias field
+        gateway: "Razorpay",
+        paymentGateway: "Razorpay",
+        status: "Pending", // Payment pending until Razorpay verification
+        transactionId: null, // Will be set after Razorpay payment
+        gatewayTransactionId: null,
+        gatewayOrderId: null, // Will store Razorpay order_id
+        gatewayPaymentId: null, // Will store razorpay_payment_id
+        gatewaySignature: null, // Will store razorpay_signature
         paymentDetails: paymentDetailsObj,
         billingAddress: {
           firstName: guestDetails.primaryGuest.name.split(' ')[0] || '',
@@ -514,9 +528,9 @@ const createBooking = async (req, res) => {
       console.log('Payment record created successfully:', payment.paymentId);
 
       // Update booking with payment reference
-      // Payment is completed but booking status remains Pending until admin confirms
-      booking.paymentStatus = "Paid";
-      booking.status = "Pending"; // Changed from "Confirmed" to "Pending"
+      // Payment is Pending until Razorpay verification
+      booking.paymentStatus = "Pending";
+      booking.status = "Pending";
       booking.paymentDetails.paymentId = payment._id;
       await booking.save();
 
@@ -547,116 +561,74 @@ const createBooking = async (req, res) => {
       { path: "room", select: "name type" },
     ]);
 
-    // Send confirmation email
+    // Create Razorpay order
     try {
-      const htmlMessage = generateBookingConfirmationEmail(
-        booking, 
-        guestDetails, 
-        checkIn, 
-        checkOut, 
-        nights, 
-        roomPrice, 
-        subtotal, 
-        gst, 
-        totalAmount, 
-        extraServices, 
-        specialRequests, 
-        paymentDetails
-      );
-
-      const plainTextMessage = `
-Dear ${guestDetails.primaryGuest.name},
-
-Your booking has been received and is PENDING CONFIRMATION!
-
-BOOKING DETAILS:
-- Booking ID: ${booking.bookingId}
-- Status: PENDING (Awaiting Admin Confirmation)
-- Room: ${booking.room.name} (${booking.room.type})
-- Check-in Date: ${checkIn.toDateString()}
-- Check-out Date: ${checkOut.toDateString()}
-- Number of Nights: ${nights}
-- Total Guests: ${guestDetails.totalAdults} Adult(s), ${guestDetails.totalChildren} Child(ren)
-
-CONTACT INFORMATION:
-- Name: ${guestDetails.primaryGuest.name}
-- Email: ${guestDetails.primaryGuest.email}
-- Phone: ${guestDetails.primaryGuest.phone}
-${guestDetails.additionalGuests && guestDetails.additionalGuests.length > 0 ? `\nAdditional Guests:\n${guestDetails.additionalGuests.map(g => `- ${g.name}`).join('\n')}` : ''}
-
-PRICING BREAKDOWN:
-- Room Rate (${nights} nights): ₹${roomPrice.toFixed(2)}${extraServices && extraServices.length > 0 ? `\nExtra Services:\n${extraServices.map(service => `- ${service.name} × ${service.quantity} = ₹${(service.price * service.quantity).toFixed(2)}`).join('\n')}` : ''}
-- Subtotal: ₹${subtotal.toFixed(2)}
-- GST (18%): ₹${gst.toFixed(2)}
-- TOTAL AMOUNT: ₹${totalAmount.toFixed(2)}
-
-PAYMENT INFORMATION:
-- Payment Method: ${paymentDetails?.method || 'Cash'}
-- Payment Status: ${booking.paymentStatus}
-${specialRequests ? `\nSPECIAL REQUESTS:\n${specialRequests}` : ''}
-
-IMPORTANT: Your booking is currently PENDING and will be confirmed by our admin team shortly. You will receive a confirmation email once your booking is approved.
-
-If you need to cancel or modify your booking, please contact us at concierge@luxuryhotel.com or call +1 (555) 123-4567.
-
-Best regards,
-Luxury Hotel Booking Team
-      `;
-
-      await sendEmail({
-        email: guestDetails.primaryGuest.email,
-        subject: `⏳ Booking Received - Pending Confirmation - ${booking.bookingId} | Luxury Hotel`,
-        message: plainTextMessage,
-        html: htmlMessage,
-      });
-    } catch (emailError) {
-      console.error("Email sending error:", emailError);
-    }
-
-    // Emit real-time notifications
-    try {
-      // Emit new booking to admin dashboard
-      emitNewBooking({
-        bookingId: booking.bookingId,
-        customerName: guestDetails.primaryGuest.name,
-        roomName: booking.room.name,
-        checkInDate: checkIn,
-        checkOutDate: checkOut,
-        totalAmount,
-        status: booking.status,
-        paymentStatus: booking.paymentStatus,
+      const razorpay = new Razorpay({
+        key_id: process.env.RAZORPAY_KEY_ID,
+        key_secret: process.env.RAZORPAY_KEY_SECRET,
       });
 
-      // Send notification to user
-      emitUserNotification(req.user.id, {
-        title: "🏨 Booking Created Successfully!",
-        message: `Your booking ${booking.bookingId} has been created and is pending admin confirmation`,
-        type: "success",
-        bookingId: booking.bookingId,
-      });
+      const options = {
+        amount: Math.round(totalAmount * 100), // Amount in paise
+        currency: 'INR',
+        receipt: booking.bookingId,
+        notes: {
+          bookingId: booking.bookingId,
+          roomId: roomId,
+          userId: req.user.id
+        }
+      };
 
-      // Create notification in database
-      await createRoomBookingNotification(
-        req.user.id,
-        { booking, room: booking.room, status: booking.status },
-        'created'
-      );
-    } catch (notificationError) {
-      console.error("Notification creation error:", notificationError);
-    }
+      const razorpayOrder = await razorpay.orders.create(options);
 
-    res.status(201).json({
-      success: true,
-      data: booking,
-      bookingId: booking.bookingId,
-      paymentId: payment?.paymentId || null,
-      message: "Booking created successfully and is pending admin confirmation",
-      notificationTrigger: {
-        type: 'booking_pending',
-        bookingId: booking.bookingId,
-        message: `Your booking has been received and is pending confirmation. Booking ID: ${booking.bookingId}`
+      // Update payment record with Razorpay order ID
+      payment.gatewayOrderId = razorpayOrder.id;
+      await payment.save();
+
+      // Emit real-time notification to admin about pending booking
+      try {
+        emitNewBooking({
+          bookingId: booking.bookingId,
+          customerName: guestDetails.primaryGuest.name,
+          roomName: booking.room.name,
+          checkInDate: checkIn,
+          checkOutDate: checkOut,
+          totalAmount,
+          status: booking.status,
+          paymentStatus: booking.paymentStatus,
+        });
+      } catch (notificationError) {
+        console.error("Notification emission error:", notificationError);
       }
-    });
+
+      // Return Razorpay order details to frontend
+      res.status(201).json({
+        success: true,
+        data: {
+          bookingId: booking._id,
+          orderId: razorpayOrder.id,
+          amount: totalAmount,
+          razorpayKeyId: process.env.RAZORPAY_KEY_ID
+        },
+        message: "Booking created, proceed with payment"
+      });
+    } catch (razorpayError) {
+      console.error("Razorpay order creation error:", razorpayError);
+
+      // If Razorpay order creation fails, cancel booking and release room
+      try {
+        await Booking.findByIdAndDelete(booking._id);
+        await Payment.findByIdAndDelete(payment._id);
+        await room.unlockRoom();
+      } catch (cleanupError) {
+        console.error("Cleanup error:", cleanupError);
+      }
+
+      return res.status(503).json({
+        success: false,
+        message: "Payment service temporarily unavailable"
+      });
+    }
   } catch (error) {
     console.error("Create booking error:", error);
     res.status(500).json({
