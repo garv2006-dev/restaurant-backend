@@ -3,6 +3,7 @@ const Room = require('../models/Room');
 const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const Review = require('../models/Review');
+const RoomAllocation = require('../models/RoomAllocation');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -10,11 +11,11 @@ const Review = require('../models/Review');
 const getDashboardStats = async (req, res) => {
     try {
         const { period = 'month' } = req.query;
-        
+
         // Calculate date range based on period
         const now = new Date();
         let startDate;
-        
+
         switch (period) {
             case 'week':
                 startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -42,13 +43,13 @@ const getDashboardStats = async (req, res) => {
         const periodBookings = await Booking.countDocuments({
             createdAt: { $gte: startDate }
         });
-        
+
         const periodRevenue = await Payment.aggregate([
-            { 
-                $match: { 
+            {
+                $match: {
                     status: 'Completed',
                     createdAt: { $gte: startDate }
-                } 
+                }
             },
             { $group: { _id: null, total: { $sum: '$amount' } } }
         ]);
@@ -231,8 +232,21 @@ const updateBookingStatus = async (req, res) => {
             await Room.findByIdAndUpdate(booking.room, { status: 'Occupied' });
         } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
             await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
+
+            // Mark allocation as completed
+            await RoomAllocation.findOneAndUpdate(
+                { booking: booking._id },
+                { status: 'Completed' }
+            );
+
         } else if (status === 'Cancelled' || status === 'NoShow') {
             await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
+
+            // Cancel the allocation
+            await RoomAllocation.findOneAndUpdate(
+                { booking: booking._id },
+                { status: 'Cancelled' }
+            );
         }
 
         await booking.save();
@@ -416,7 +430,7 @@ const updateBookingStatus = async (req, res) => {
         try {
             const { createRoomBookingNotification } = require('./notificationController');
             const { emitUserNotification } = require('../config/socket');
-            
+
             let notificationAction = '';
             let notificationTitle = '';
             let notificationMessage = '';
@@ -953,9 +967,9 @@ const markPaymentAsPaid = async (req, res) => {
         }
 
         // Check if payment method is cash
-        const isCashPayment = payment.paymentMethod === 'Cash' || 
-                             payment.paymentMethod === 'cash' || 
-                             payment.paymentMethod === 'COD';
+        const isCashPayment = payment.paymentMethod === 'Cash' ||
+            payment.paymentMethod === 'cash' ||
+            payment.paymentMethod === 'COD';
 
         if (!isCashPayment) {
             return res.status(400).json({
@@ -981,12 +995,12 @@ const markPaymentAsPaid = async (req, res) => {
             booking.paymentDetails.paidAmount = payment.amount;
             booking.paymentDetails.paymentDate = new Date();
             booking.paymentDetails.transactionId = payment.transactionId;
-            
+
             // If booking is still pending, confirm it
             if (booking.status === 'Pending') {
                 booking.status = 'Confirmed';
             }
-            
+
             await booking.save();
 
             // Send payment confirmation email

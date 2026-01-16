@@ -143,6 +143,12 @@ const RoomSchema = new mongoose.Schema({
         required: true,
         min: 1
     },
+    totalRooms: {
+        type: Number,
+        required: [true, 'Please specify total number of rooms'],
+        min: 1,
+        default: 1
+    },
     isActive: {
         type: Boolean,
         default: true
@@ -198,9 +204,9 @@ RoomSchema.index({ 'price.basePrice': 1 });
 RoomSchema.index({ isActive: 1 });
 
 // Method to check if room is available for given dates
-RoomSchema.methods.isAvailableForDates = async function(checkIn, checkOut) {
+RoomSchema.methods.isAvailableForDates = async function (checkIn, checkOut) {
     const Booking = mongoose.model('Booking');
-    
+
     // Check if room is in maintenance during the requested dates
     const isInMaintenance = this.maintenanceSchedule.some(maintenance => {
         return (checkIn <= maintenance.endDate && checkOut >= maintenance.startDate);
@@ -224,66 +230,66 @@ RoomSchema.methods.isAvailableForDates = async function(checkIn, checkOut) {
 };
 
 // Method to get price for specific dates
-RoomSchema.methods.getPriceForDates = function(checkIn, checkOut) {
+RoomSchema.methods.getPriceForDates = function (checkIn, checkOut) {
     let totalPrice = 0;
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
-    
+
     for (let i = 0; i < nights; i++) {
         const currentDate = new Date(checkIn);
         currentDate.setDate(checkIn.getDate() + i);
-        
+
         let dailyPrice = this.price.basePrice;
-        
+
         // Check for seasonal pricing
-        const seasonalPrice = this.price.seasonalPricing.find(season => 
+        const seasonalPrice = this.price.seasonalPricing.find(season =>
             currentDate >= season.startDate && currentDate <= season.endDate
         );
-        
+
         if (seasonalPrice) {
             dailyPrice = seasonalPrice.price;
         }
-        
+
         totalPrice += dailyPrice;
     }
-    
+
     return totalPrice;
 };
 
 // Method to lock room for real-time booking
-RoomSchema.methods.lockRoom = async function(userId, lockDurationMinutes = 5) {
+RoomSchema.methods.lockRoom = async function (userId, lockDurationMinutes = 5) {
     const now = new Date();
     const lockExpiry = new Date(now.getTime() + lockDurationMinutes * 60 * 1000);
-    
+
     this.status = 'locked';
     this.lockedBy = userId;
     this.lockExpiry = lockExpiry;
-    
+
     await this.save();
     return this;
 };
 
 // Method to unlock room
-RoomSchema.methods.unlockRoom = async function() {
+RoomSchema.methods.unlockRoom = async function () {
     this.status = 'Available';
     this.lockedBy = null;
     this.lockExpiry = null;
-    
+
     await this.save();
     return this;
 };
 
 // Method to confirm room booking
-RoomSchema.methods.confirmBooking = async function() {
+RoomSchema.methods.confirmBooking = async function () {
     this.status = 'booked';
     this.lockedBy = null;
     this.lockExpiry = null;
-    
+
     await this.save();
     return this;
 };
 
 // Method to check if lock is expired and release if needed
-RoomSchema.methods.checkAndReleaseExpiredLock = async function() {
+RoomSchema.methods.checkAndReleaseExpiredLock = async function () {
     if (this.status === 'locked' && this.lockExpiry && new Date() > this.lockExpiry) {
         await this.unlockRoom();
         return true; // Lock was released
@@ -292,7 +298,7 @@ RoomSchema.methods.checkAndReleaseExpiredLock = async function() {
 };
 
 // Static method to release all expired locks
-RoomSchema.statics.releaseExpiredLocks = async function() {
+RoomSchema.statics.releaseExpiredLocks = async function () {
     const now = new Date();
     const result = await this.updateMany(
         {
@@ -307,19 +313,19 @@ RoomSchema.statics.releaseExpiredLocks = async function() {
             }
         }
     );
-    
+
     return result.modifiedCount;
 };
 
 // Update average rating
-RoomSchema.methods.updateAverageRating = async function() {
+RoomSchema.methods.updateAverageRating = async function () {
     const Review = mongoose.model('Review');
-    
+
     const stats = await Review.aggregate([
         { $match: { room: this._id, isApproved: true } },
         { $group: { _id: '$room', avgRating: { $avg: '$rating' }, count: { $sum: 1 } } }
     ]);
-    
+
     if (stats.length > 0) {
         this.averageRating = Math.round(stats[0].avgRating * 10) / 10;
         this.totalReviews = stats[0].count;
@@ -327,7 +333,7 @@ RoomSchema.methods.updateAverageRating = async function() {
         this.averageRating = 0;
         this.totalReviews = 0;
     }
-    
+
     await this.save();
 };
 

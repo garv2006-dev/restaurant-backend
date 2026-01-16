@@ -15,10 +15,10 @@ const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const { initializeSocket } = require('./config/socket');
 
-// Route imports
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const roomRoutes = require('./routes/rooms');
+const roomNumberRoutes = require('./routes/roomNumbers');
 const bookingRoutes = require('./routes/bookings');
 const paymentRoutes = require('./routes/payments');
 const reviewRoutes = require('./routes/reviews');
@@ -166,6 +166,7 @@ app.get('/health', async (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/rooms', roomRoutes);
+app.use('/api/room-numbers', roomNumberRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reviews', reviewRoutes);

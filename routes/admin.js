@@ -24,6 +24,11 @@ const {
     getLiveDashboard
 } = require('../controllers/reportController');
 
+const {
+    getSettings,
+    updateSettings
+} = require('../controllers/settingsController');
+
 // All routes require admin authorization
 router.use(protect, authorize('admin'));
 
@@ -49,7 +54,8 @@ router.get('/reports/export', exportReport);
 router.get('/reports/legacy', generateReports); // Keep existing reports for backward compatibility
 
 // System settings
-router.get('/settings', getSystemSettings);
+router.get('/settings', getSettings);
+router.put('/settings', updateSettings);
 
 // Staff management
 router.post('/staff', createStaffUser);

@@ -1,5 +1,6 @@
 const Booking = require("../models/Booking");
 const Room = require("../models/Room");
+const RoomNumber = require("../models/RoomNumber");
 const User = require("../models/User");
 const Payment = require("../models/Payment");
 const Discount = require("../models/Discount");
@@ -347,10 +348,25 @@ const createBooking = async (req, res) => {
       }
     }
 
+    // Check for room availability (CAPACITY CHECK)
+    const availableRoomCount = await RoomNumber.getAvailableCount(roomId, checkIn, checkOut);
+
+    if (availableRoomCount <= 0) {
+      console.warn(`Booking created as WAITLIST/PENDING: All rooms of type ${roomId} are booked for ${checkIn} - ${checkOut}`);
+      // We DO NOT block here anymore, per user request to allow "Not Allocated" bookings (Waitlist).
+      // The code below will fail to find 'availableRoomNumber' and skip allocation, correctly resulting in "Not Allocated".
+    }
+
     // Calculate final amounts
     const totalDiscountAmount = discountAmount + redemptionDiscountAmount;
     const subtotalAfterDiscounts = subtotal - totalDiscountAmount;
-    const gst = subtotalAfterDiscounts * 0.18;
+
+    // Fetch dynamic GST settings
+    const Settings = require('../models/Settings');
+    const settings = await Settings.findOne({ type: 'tax' });
+    const gstRate = settings ? settings.gstPercentage : 18;
+
+    const gst = subtotalAfterDiscounts * (gstRate / 100);
     const totalAmount = subtotalAfterDiscounts + gst;
 
     // Ensure total amount is not negative
@@ -403,7 +419,57 @@ const createBooking = async (req, res) => {
       },
     });
 
+    // AUTO-ALLOCATE ROOM NUMBER
+    // Find an available room number for this room type and date range
+    try {
+      const availableRoomNumber = await RoomNumber.findAvailableRoom(roomId, checkIn, checkOut);
+
+      if (availableRoomNumber) {
+        // Create RoomAllocation (Single Source of Truth)
+        const RoomAllocation = require('../models/RoomAllocation'); // Import lazily or at top
+        await RoomAllocation.create({
+          booking: booking._id,
+          roomNumber: availableRoomNumber._id,
+          roomType: roomId,
+          guestName: guestDetails.primaryGuest.name,
+          checkInDate: checkIn,
+          checkOutDate: checkOut,
+          status: 'Active'
+        });
+
+        // Only allocate the room number status if the booking is active NOW
+        const now = new Date();
+        const isActiveNow = (checkIn <= now && checkOut > now);
+
+        if (isActiveNow) {
+          await availableRoomNumber.allocate(
+            booking._id,
+            req.user.id,
+            guestDetails.primaryGuest.name,
+            checkIn,
+            checkOut
+          );
+        }
+
+        // Update booking with room number info
+        booking.roomNumber = availableRoomNumber._id;
+        booking.roomNumberInfo = {
+          number: availableRoomNumber.roomNumber,
+          floor: availableRoomNumber.floor,
+          allocatedAt: new Date()
+        };
+        await booking.save();
+
+        console.log(`Room number ${availableRoomNumber.roomNumber} assigned to booking ${booking.bookingId}`);
+      } else {
+        console.warn(`No available room number found for booking ${booking.bookingId}. Room type: ${roomId}`);
+      }
+    } catch (allocationError) {
+      console.error('Room number auto-allocation error:', allocationError);
+    }
+
     // If redemption was applied, mark it as used
+
     if (appliedRedemption) {
       try {
         const redemption = await RewardRedemption.findOne({
@@ -962,6 +1028,39 @@ const cancelBooking = async (req, res) => {
       booking.paymentDetails.refundAmount = refundAmount;
     }
 
+    // Deallocate room number if allocated (make it available for new bookings)
+    // Robust check: Check both booking.roomNumber and RoomNumber collection
+    let roomNumberToDeallocate = null;
+
+    if (booking.roomNumber) {
+      roomNumberToDeallocate = await RoomNumber.findById(booking.roomNumber);
+    }
+
+    if (!roomNumberToDeallocate) {
+      // Fallback: Find room where this booking is the current allocation
+      roomNumberToDeallocate = await RoomNumber.findOne({
+        'currentAllocation.booking': booking._id
+      });
+    }
+
+    if (roomNumberToDeallocate) {
+      try {
+        await roomNumberToDeallocate.deallocate();
+        console.log(`Room number ${roomNumberToDeallocate.roomNumber} deallocated after booking cancellation`);
+
+        // Also cancel the RoomAllocation record (Source of Truth)
+        const RoomAllocation = require('../models/RoomAllocation');
+        await RoomAllocation.findOneAndUpdate(
+          { booking: booking._id },
+          { status: 'Cancelled' }
+        );
+
+      } catch (roomNumberError) {
+        console.error('Error deallocating room number on cancellation:', roomNumberError);
+        // Continue with cancellation even if deallocation fails
+      }
+    }
+
     await booking.save();
 
     // Send cancellation email
@@ -987,8 +1086,8 @@ const cancelBooking = async (req, res) => {
 
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
-        subject: `Booking Cancelled - ${booking.bookingId}`,
-        message: emailMessage,
+        subject: `Booking Cancelled Successfully - ${booking.bookingId}`,
+        message: emailMessage.replace('Your booking has been cancelled.', 'Your booking has been successfully cancelled.'),
       });
     } catch (emailError) {
       console.error("Email sending error:", emailError);
@@ -1203,7 +1302,21 @@ const checkInBooking = async (req, res) => {
       notes,
     };
 
-    // Update room status
+    // Update room number status to Occupied (if allocated)
+    if (booking.roomNumber) {
+      try {
+        const roomNumber = await RoomNumber.findById(booking.roomNumber);
+        if (roomNumber) {
+          await roomNumber.markOccupied(new Date());
+          console.log(`Room number ${roomNumber.roomNumber} marked as Occupied for booking ${booking.bookingId}`);
+        }
+      } catch (roomNumberError) {
+        console.error('Error updating room number status:', roomNumberError);
+        // Continue with check-in even if room number update fails
+      }
+    }
+
+    // Also update room type status for backward compatibility
     await Room.findByIdAndUpdate(booking.room, { status: "Occupied" });
 
     await booking.save();
@@ -1305,7 +1418,21 @@ const checkOutBooking = async (req, res) => {
       booking.pricing.totalAmount += additionalTotal;
     }
 
-    // Update room status
+    // Deallocate room number (make it available for new bookings)
+    if (booking.roomNumber) {
+      try {
+        const roomNumber = await RoomNumber.findById(booking.roomNumber);
+        if (roomNumber) {
+          await roomNumber.deallocate();
+          console.log(`Room number ${roomNumber.roomNumber} deallocated and made available after checkout`);
+        }
+      } catch (roomNumberError) {
+        console.error('Error deallocating room number:', roomNumberError);
+        // Continue with check-out even if deallocation fails
+      }
+    }
+
+    // Also update room type status for backward compatibility
     await Room.findByIdAndUpdate(booking.room, { status: "Available" });
 
     await booking.save();
