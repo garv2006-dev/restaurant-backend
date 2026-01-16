@@ -1,4 +1,5 @@
 const Room = require('../models/Room');
+const RoomNumber = require('../models/RoomNumber');
 const Booking = require('../models/Booking');
 const cloudinary = require('../utils/cloudinary');
 
@@ -89,16 +90,43 @@ const getRooms = async (req, res) => {
 
         const total = await Room.countDocuments(query);
 
+        // Add availability count from room numbers for each room
+        const roomsWithAvailability = await Promise.all(rooms.map(async (room) => {
+            const roomObj = room.toObject();
+
+            // Get availability count from room numbers
+            if (checkIn && checkOut) {
+                const checkInDate = new Date(checkIn);
+                const checkOutDate = new Date(checkOut);
+                roomObj.availableCount = await RoomNumber.getAvailableCount(room._id, checkInDate, checkOutDate);
+            } else {
+                // If no dates specified, count all available room numbers
+                roomObj.availableCount = await RoomNumber.countDocuments({
+                    roomType: room._id,
+                    status: 'Available',
+                    isActive: true
+                });
+            }
+
+            // Also get total room numbers for this type
+            roomObj.totalRoomNumbers = await RoomNumber.countDocuments({
+                roomType: room._id,
+                isActive: true
+            });
+
+            return roomObj;
+        }));
+
         res.status(200).json({
             success: true,
-            count: rooms.length,
+            count: roomsWithAvailability.length,
             total,
             pagination: {
                 page: Number(page),
                 limit: Number(limit),
                 pages: Math.ceil(total / limit)
             },
-            data: rooms
+            data: roomsWithAvailability
         });
 
     } catch (error) {
@@ -333,7 +361,7 @@ const deleteRoom = async (req, res) => {
 const getRoomTypes = async (req, res) => {
     try {
         const types = await Room.distinct('type', { isActive: true });
-        
+
         res.status(200).json({
             success: true,
             data: types

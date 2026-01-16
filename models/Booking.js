@@ -15,6 +15,25 @@ const BookingSchema = new mongoose.Schema({
         ref: 'Room',
         required: [true, 'Booking must be for a room']
     },
+    roomNumber: {
+        type: mongoose.Schema.ObjectId,
+        ref: 'RoomNumber',
+        default: null
+    },
+    roomNumberInfo: {
+        number: {
+            type: String,
+            default: null
+        },
+        floor: {
+            type: Number,
+            default: null
+        },
+        allocatedAt: {
+            type: Date,
+            default: null
+        }
+    },
     guestDetails: {
         primaryGuest: {
             name: {
