@@ -10,26 +10,26 @@ const mongoose = require('mongoose');
 exports.getAnalyticsReport = async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    
+
     // Default to last 30 days if no dates provided
     const start = startDate ? new Date(startDate) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     const end = endDate ? new Date(endDate) : new Date();
-    
+
     // Set end date to end of day
     end.setHours(23, 59, 59, 999);
 
     // Booking Analytics
     const bookingStats = await getBookingAnalytics(start, end);
-    
+
     // Room Analytics
     const roomStats = await getRoomAnalytics(start, end);
-    
+
     // Customer Analytics
     const customerStats = await getCustomerAnalytics(start, end);
-    
+
     // Revenue Analytics
     const revenueStats = await getRevenueAnalytics(start, end);
-    
+
     // Performance Analytics
     const performanceStats = await getPerformanceAnalytics(start, end);
 
@@ -67,11 +67,20 @@ const getBookingAnalytics = async (startDate, endDate) => {
       $group: {
         _id: null,
         total: { $sum: 1 },
+        pending: {
+          $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0] }
+        },
         confirmed: {
           $sum: { $cond: [{ $eq: ['$status', 'Confirmed'] }, 1, 0] }
         },
+        checkedIn: {
+          $sum: { $cond: [{ $eq: ['$status', 'CheckedIn'] }, 1, 0] }
+        },
         cancelled: {
           $sum: { $cond: [{ $eq: ['$status', 'Cancelled'] }, 1, 0] }
+        },
+        noShow: {
+          $sum: { $cond: [{ $eq: ['$status', 'NoShow'] }, 1, 0] }
         },
         completed: {
           $sum: { $cond: [{ $eq: ['$status', 'CheckedOut'] }, 1, 0] }
@@ -84,8 +93,11 @@ const getBookingAnalytics = async (startDate, endDate) => {
 
   const stats = bookings[0] || {
     total: 0,
+    pending: 0,
     confirmed: 0,
+    checkedIn: 0,
     cancelled: 0,
+    noShow: 0,
     completed: 0,
     totalRevenue: 0,
     totalNights: 0
@@ -98,8 +110,11 @@ const getBookingAnalytics = async (startDate, endDate) => {
 
   return {
     total: stats.total,
+    pending: stats.pending,
     confirmed: stats.confirmed,
+    checkedIn: stats.checkedIn,
     cancelled: stats.cancelled,
+    noShow: stats.noShow,
     completed: stats.completed,
     revenue: stats.totalRevenue,
     averageBookingValue: stats.total > 0 ? (stats.totalRevenue / stats.total).toFixed(2) : 0,
@@ -166,7 +181,7 @@ const getCustomerAnalytics = async (startDate, endDate) => {
     role: 'customer',
     createdAt: { $gte: startDate, $lte: endDate }
   });
-  
+
   // Returning customers (customers who made bookings in this period and had previous bookings)
   const returningCustomers = await Booking.aggregate([
     {
@@ -305,7 +320,50 @@ const getPerformanceAnalytics = async (startDate, endDate) => {
   const reviewData = reviewStats[0] || { averageRating: 0, totalReviews: 0 };
   const customerSatisfaction = reviewData.averageRating > 0 ? (reviewData.averageRating / 5 * 100).toFixed(1) : 0;
 
+  // Top performing rooms
+  const topRooms = await Booking.aggregate([
+    {
+      $match: {
+        createdAt: { $gte: startDate, $lte: endDate },
+        status: { $in: ['Confirmed', 'CheckedIn', 'CheckedOut'] }
+      }
+    },
+    {
+      $group: {
+        _id: '$room',
+        bookings: { $sum: 1 },
+        revenue: { $sum: '$pricing.totalAmount' }
+      }
+    },
+    {
+      $sort: { revenue: -1 }
+    },
+    {
+      $limit: 5
+    },
+    {
+      $lookup: {
+        from: 'rooms',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'roomDetails'
+      }
+    },
+    {
+      $unwind: '$roomDetails'
+    },
+    {
+      $project: {
+        roomName: '$roomDetails.name',
+        bookings: 1,
+        revenue: 1,
+        _id: 0
+      }
+    }
+  ]);
+
   return {
+    topRooms,
     customerSatisfaction: parseFloat(customerSatisfaction),
     averageRating: reviewData.averageRating || 0
   };
@@ -317,7 +375,7 @@ const getPerformanceAnalytics = async (startDate, endDate) => {
 exports.exportReport = async (req, res) => {
   try {
     const { format, startDate, endDate } = req.query;
-    
+
     if (!format || !['pdf', 'excel'].includes(format)) {
       return res.status(400).json({
         success: false,
@@ -357,16 +415,16 @@ exports.getLiveDashboard = async (req, res) => {
 
     // Live metrics
     const liveMetrics = await getLiveMetrics(today, tomorrow);
-    
+
     // Recent bookings (last 10)
     const recentBookings = await getRecentBookings();
-    
+
     // Today's hourly revenue
     const revenueToday = await getTodayHourlyRevenue(today, tomorrow);
-    
+
     // Room status
     const roomStatus = await getCurrentRoomStatus();
-    
+
     // System alerts (mock data for now)
     const alerts = [
       {
@@ -504,6 +562,21 @@ const getTodayHourlyRevenue = async (today, tomorrow) => {
   }
 
   return allHours;
+};
+
+// Helper function for current room status
+const getCurrentRoomStatus = async () => {
+  const totalRooms = await Room.countDocuments({ isActive: true });
+  const available = await Room.countDocuments({ status: 'Available', isActive: true });
+  const occupied = await Room.countDocuments({ status: 'Occupied', isActive: true });
+  const maintenance = await Room.countDocuments({ status: 'Maintenance', isActive: true });
+
+  return {
+    total: totalRooms,
+    available,
+    occupied,
+    maintenance
+  };
 };
 
 module.exports = {
