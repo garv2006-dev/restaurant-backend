@@ -12,6 +12,7 @@ exports.getActiveDiscounts = async (req, res) => {
     const now = new Date();
     const discounts = await Discount.find({
       isActive: true,
+      isDeleted: { $ne: true },
       validFrom: { $lte: now },
       validUntil: { $gte: now },
       $or: [
@@ -39,7 +40,7 @@ exports.getActiveDiscounts = async (req, res) => {
 exports.validateDiscount = async (req, res) => {
   try {
     const { code, orderAmount } = req.body;
-    
+
     if (!code) {
       return res.status(400).json({
         success: false,
@@ -47,9 +48,10 @@ exports.validateDiscount = async (req, res) => {
       });
     }
 
-    const discount = await Discount.findOne({ 
+    const discount = await Discount.findOne({
       code: code.toUpperCase(),
-      isActive: true 
+      isActive: true,
+      isDeleted: { $ne: true }
     });
 
     if (!discount) {
@@ -87,7 +89,7 @@ exports.validateDiscount = async (req, res) => {
     // Calculate discount amount if order amount is provided
     let discountAmount = 0;
     let isApplicable = true;
-    
+
     if (orderAmount) {
       if (orderAmount < discount.minimumOrderAmount) {
         isApplicable = false;
@@ -96,7 +98,7 @@ exports.validateDiscount = async (req, res) => {
           message: `Minimum order amount of ₹${discount.minimumOrderAmount} required`
         });
       }
-      
+
       if (discount.maximumOrderAmount && orderAmount > discount.maximumOrderAmount) {
         isApplicable = false;
         return res.status(400).json({
@@ -104,7 +106,7 @@ exports.validateDiscount = async (req, res) => {
           message: `Maximum order amount of ₹${discount.maximumOrderAmount} exceeded`
         });
       }
-      
+
       discountAmount = discount.calculateDiscount(orderAmount);
     }
 
@@ -141,7 +143,7 @@ exports.validateDiscount = async (req, res) => {
 exports.applyDiscount = async (req, res) => {
   try {
     const { discountId, orderAmount } = req.body;
-    
+
     if (!discountId || !orderAmount) {
       return res.status(400).json({
         success: false,
@@ -175,7 +177,7 @@ exports.applyDiscount = async (req, res) => {
     }
 
     const discountAmount = discount.calculateDiscount(orderAmount);
-    
+
     if (discountAmount === 0) {
       return res.status(400).json({
         success: false,
@@ -242,14 +244,14 @@ exports.createDiscount = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating discount:', error);
-    
+
     if (error.code === 11000) {
       return res.status(400).json({
         success: false,
         message: 'Discount code already exists'
       });
     }
-    
+
     res.status(500).json({
       success: false,
       message: 'Server error while creating discount'
@@ -261,9 +263,9 @@ exports.createDiscount = async (req, res) => {
 const sendNewDiscountNotificationToAllUsers = async (discount) => {
   try {
     // Get all active customer users
-    const users = await User.find({ 
-      role: 'customer', 
-      isActive: true 
+    const users = await User.find({
+      role: 'customer',
+      isActive: true
     }).select('_id').lean();
 
     if (users.length === 0) {
@@ -271,10 +273,10 @@ const sendNewDiscountNotificationToAllUsers = async (discount) => {
     }
 
     // Prepare notification data
-    const discountValue = discount.type === 'percentage' 
-      ? `${discount.value}%` 
+    const discountValue = discount.type === 'percentage'
+      ? `${discount.value}%`
       : `₹${discount.value}`;
-    
+
     const title = '🎁 New Discount Available!';
     const message = `Use code ${discount.code} to get ${discountValue} off. ${discount.description}`;
 
@@ -313,10 +315,10 @@ const sendNewDiscountNotificationToAllUsers = async (discount) => {
     const results = await Promise.all(notificationPromises);
     const successCount = results.filter(r => r.success).length;
 
-    return { 
-      success: true, 
+    return {
+      success: true,
       count: successCount,
-      total: users.length 
+      total: users.length
     };
   } catch (error) {
     console.error('Error in sendNewDiscountNotificationToAllUsers:', error);
@@ -330,7 +332,7 @@ const sendNewDiscountNotificationToAllUsers = async (discount) => {
 exports.updateDiscount = async (req, res) => {
   try {
     const discount = await Discount.findById(req.params.id);
-    
+
     if (!discount) {
       return res.status(404).json({
         success: false,
@@ -360,26 +362,50 @@ exports.updateDiscount = async (req, res) => {
 // @access  Private/Admin
 exports.deleteDiscount = async (req, res) => {
   try {
+    console.log(`[Discount] Attempting to delete discount with ID: ${req.params.id}`);
+
+    // Check if ID is valid mongoose objectId
+    if (!require('mongoose').Types.ObjectId.isValid(req.params.id)) {
+      console.warn(`[Discount] Invalid ID format: ${req.params.id}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid discount ID format'
+      });
+    }
+
     const discount = await Discount.findById(req.params.id);
-    
+
     if (!discount) {
+      console.warn(`[Discount] Discount not found with ID: ${req.params.id}`);
       return res.status(404).json({
         success: false,
         message: 'Discount not found'
       });
     }
 
-    await discount.deleteOne();
+    // Check if discount has been used - soft delete or restrict?
+    // For now, we allow deletion but log it
+    if (discount.usageCount > 0) {
+      console.info(`[Discount] Deleting discount that has been used ${discount.usageCount} times.`);
+    }
+
+    // Soft delete
+    discount.isDeleted = true;
+    discount.isActive = false; // Also deactivate it
+    await discount.save();
+
+    console.log(`[Discount] Successfully soft-deleted discount: ${discount._id}`);
 
     res.status(200).json({
       success: true,
       message: 'Discount deleted successfully'
     });
   } catch (error) {
-    console.error('Error deleting discount:', error);
+    console.error('[Discount] Error deleting discount:', error);
     res.status(500).json({
       success: false,
-      message: 'Server error while deleting discount'
+      message: 'Server error while deleting discount',
+      error: error.message
     });
   }
 };
@@ -389,7 +415,7 @@ exports.deleteDiscount = async (req, res) => {
 // @access  Private/Admin
 exports.getAllDiscountsAdmin = async (req, res) => {
   try {
-    const discounts = await Discount.find()
+    const discounts = await Discount.find({ isDeleted: { $ne: true } })
       .populate('createdBy', 'name email')
       .populate('usedBy.user', 'name email')
       .sort({ createdAt: -1 });

@@ -91,6 +91,11 @@ const discountSchema = new mongoose.Schema({
     default: false,
     index: true
   },
+  isDeleted: {
+    type: Boolean,
+    default: false,
+    index: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
@@ -117,37 +122,37 @@ discountSchema.index({ isActive: 1, validFrom: 1, validUntil: 1 });
 discountSchema.index({ 'usedBy.user': 1 });
 
 // Virtual to check if discount is currently valid
-discountSchema.virtual('isCurrentlyValid').get(function() {
+discountSchema.virtual('isCurrentlyValid').get(function () {
   const now = new Date();
-  return this.isActive && 
-         this.validFrom <= now && 
-         this.validUntil >= now &&
-         (this.usageLimit.total === null || this.usageCount < this.usageLimit.total);
+  return this.isActive &&
+    this.validFrom <= now &&
+    this.validUntil >= now &&
+    (this.usageLimit.total === null || this.usageCount < this.usageLimit.total);
 });
 
 // Method to check if user can use this discount
-discountSchema.methods.canUserUse = function(userId) {
+discountSchema.methods.canUserUse = function (userId) {
   if (!this.isCurrentlyValid) return false;
-  
+
   // Check if user has exceeded per-user limit
   const userUsage = this.usedBy.filter(usage => usage.user.toString() === userId.toString()).length;
   if (userUsage >= this.usageLimit.perUser) return false;
-  
+
   // Check if specific users are restricted
   if (this.applicableToUsers.length > 0 && !this.applicableToUsers.includes(userId)) {
     return false;
   }
-  
+
   return true;
 };
 
 // Method to apply discount to order
-discountSchema.methods.calculateDiscount = function(orderAmount) {
+discountSchema.methods.calculateDiscount = function (orderAmount) {
   if (orderAmount < this.minimumOrderAmount) return 0;
   if (this.maximumOrderAmount && orderAmount > this.maximumOrderAmount) return 0;
-  
+
   let discount = 0;
-  
+
   switch (this.type) {
     case 'percentage':
       discount = (orderAmount * this.value) / 100;
@@ -167,7 +172,7 @@ discountSchema.methods.calculateDiscount = function(orderAmount) {
       discount = 0; // Placeholder
       break;
   }
-  
+
   return Math.round(discount * 100) / 100; // Round to 2 decimal places
 };
 

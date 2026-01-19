@@ -339,11 +339,29 @@ const deleteRoom = async (req, res) => {
             });
         }
 
+        // Check if there are any active room allocations for this room type
+        const activeRoomNumbers = await RoomNumber.countDocuments({
+            roomType: req.params.id,
+            status: { $in: ['Allocated', 'Occupied'] },
+            isActive: true
+        });
+
+        if (activeRoomNumbers > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Cannot delete room type with active room allocations. Please deallocate rooms first.'
+            });
+        }
+
+        // Delete all associated room numbers (Cascading delete)
+        await RoomNumber.deleteMany({ roomType: req.params.id });
+
+        // Delete the room type
         await room.deleteOne();
 
         res.status(200).json({
             success: true,
-            message: 'Room deleted successfully'
+            message: 'Room type and all associated room numbers deleted successfully'
         });
 
     } catch (error) {
