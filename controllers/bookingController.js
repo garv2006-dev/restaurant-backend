@@ -6,7 +6,7 @@ const User = require("../models/User");
 const sendEmail = require("../utils/sendEmail");
 const Payment = require("../models/Payment");
 const Discount = require("../models/Discount");
-const { generateBookingConfirmationEmail, generateCancellationEmail } = require("../utils/emailTemplates");
+const { generateBookingConfirmationEmail, generateCancellationEmail, generateBookingReceivedEmail } = require("../utils/emailTemplates");
 const {
   emitNewBooking,
   emitBookingStatusChange,
@@ -635,20 +635,7 @@ const createBooking = async (req, res) => {
 
     // Send confirmation email
     try {
-      const htmlMessage = generateBookingConfirmationEmail(
-        booking,
-        guestDetails,
-        checkIn,
-        checkOut,
-        nights,
-        roomPrice,
-        subtotal,
-        gst,
-        totalAmount,
-        extraServices,
-        specialRequests,
-        paymentDetails
-      );
+      const htmlMessage = generateBookingReceivedEmail(booking);
 
       const plainTextMessage = `
 Dear ${guestDetails.primaryGuest.name},
@@ -1067,29 +1054,13 @@ const cancelBooking = async (req, res) => {
 
     // Send cancellation email
     try {
-      const emailMessage = `
-                Dear ${booking.guestDetails.primaryGuest.name},
-                
-                Your booking has been cancelled.
-                
-                Booking Details:
-- Booking ID: ${booking.bookingId}
-- Cancellation Fee: $${cancellationFee.toFixed(2)}
-- Refund Amount: $${refundAmount.toFixed(2)}
-                
-                ${refundAmount > 0
-          ? "Your refund will be processed within 5-7 business days."
-          : ""
-        }
-                
-                Best regards,
-  Hotel Booking Team
-            `;
+      const htmlMessage = generateCancellationEmail(booking, cancellationFee, refundAmount);
 
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
-        subject: `Booking Cancelled Successfully - ${booking.bookingId} `,
-        message: emailMessage.replace('Your booking has been cancelled.', 'Your booking has been successfully cancelled.'),
+        subject: `❌ Booking Cancelled - ${booking.bookingId} | Luxury Hotel`,
+        message: `Your booking ${booking.bookingId} has been cancelled.`, // Plain text fallback
+        html: htmlMessage,
       });
     } catch (emailError) {
       console.error("Email sending error:", emailError);
@@ -1187,43 +1158,13 @@ const confirmBooking = async (req, res) => {
 
     // Send confirmation email to customer
     try {
-      const checkIn = new Date(booking.bookingDates.checkInDate);
-      const checkOut = new Date(booking.bookingDates.checkOutDate);
-      const nights = booking.bookingDates.nights;
-
-      const emailMessage = `
-Dear ${booking.guestDetails.primaryGuest.name},
-
-Great news! Your booking has been CONFIRMED by our team!
-
-BOOKING DETAILS:
-- Booking ID: ${booking.bookingId}
-- Status: CONFIRMED ✓
-- Room: ${booking.room.name} (${booking.room.type})
-- Check -in Date: ${checkIn.toDateString()}
-- Check - out Date: ${checkOut.toDateString()}
-- Number of Nights: ${nights}
-- Total Guests: ${booking.guestDetails.totalAdults} Adult(s), ${booking.guestDetails.totalChildren} Child(ren)
-
-PAYMENT INFORMATION:
-- Total Amount: ₹${booking.pricing.totalAmount.toFixed(2)}
-- Payment Status: ${booking.paymentStatus}
-- Payment Method: ${booking.paymentDetails.method}
-
-We look forward to welcoming you at our hotel!
-
-If you have any questions or need to make changes, please contact us at:
-- Email: concierge @luxuryhotel.com
-- Phone: +1(555) 123 - 4567
-
-Best regards,
-  Luxury Hotel Team
-      `;
+      const htmlMessage = generateBookingConfirmationEmail(booking);
 
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
         subject: `✅ Booking Confirmed - ${booking.bookingId} | Luxury Hotel`,
-        message: emailMessage,
+        message: `Your booking ${booking.bookingId} has been confirmed!`, // Plain text fallback
+        html: htmlMessage,
       });
     } catch (emailError) {
       console.error("Confirmation email sending error:", emailError);
