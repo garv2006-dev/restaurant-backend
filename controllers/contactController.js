@@ -7,7 +7,10 @@ const createTransporter = () => {
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS
-    }
+    },
+    connectionTimeout: 1000000, // 10 seconds
+    socketTimeout: 1000000,     // 10 seconds
+    greetingTimeout: 1000000
   });
 };
 
@@ -180,7 +183,7 @@ exports.sendContactEmail = async (req, res) => {
               
               <div class="footer">
                 <p>This email was sent from the Luxury Hotel contact form</p>
-                <p>Received on: ${new Date().toLocaleString()}</p>
+                <p>Received on: ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour12: true })}</p>
               </div>
             </div>
           </div>
@@ -282,7 +285,7 @@ exports.sendContactEmail = async (req, res) => {
 
   } catch (error) {
     console.error('Contact form error:', error);
-    
+
     // Provide more specific error messages
     if (error.code === 'EAUTH') {
       return res.status(500).json({
@@ -290,7 +293,7 @@ exports.sendContactEmail = async (req, res) => {
         message: 'Email service authentication failed. Please contact support.'
       });
     }
-    
+
     if (error.code === 'ECONNECTION') {
       return res.status(500).json({
         success: false,
