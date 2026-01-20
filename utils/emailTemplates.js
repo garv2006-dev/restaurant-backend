@@ -162,8 +162,8 @@ const generateBookingReceivedEmail = (booking) => {
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
       { label: 'Room Type', value: booking.room.name || 'Standard Room' },
-      { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB') },
-      { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB') },
+      { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }) },
+      { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }) },
       { label: 'Guests', value: `${booking.guestDetails.totalAdults} Adults, ${booking.guestDetails.totalChildren} Children` }
     ]
   });
@@ -204,10 +204,10 @@ const generateBookingConfirmationEmail = (booking) => {
         <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
        <p style="margin: 8px 0; font-size: 14px;">
         <strong>Number of Nights:</strong> <span style="color: #333;">${booking.bookingDates.nights}</span>
@@ -271,10 +271,10 @@ const generateCheckInEmail = (booking, checkInDetails = {}) => {
         <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
     </div>
 
@@ -336,10 +336,10 @@ const generateCheckOutEmail = (booking, checkOutDetails = {}) => {
         <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
     </div>
 
@@ -405,10 +405,10 @@ const generateCancellationEmail = (booking, cancellationFee = 0, refundAmount = 
         <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</span>
+        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
       </p>
     </div>
 
