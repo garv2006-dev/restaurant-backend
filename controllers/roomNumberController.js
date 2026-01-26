@@ -131,111 +131,114 @@ const getRoomNumbers = async (req, res) => {
             .limit(Number(limit))
             .skip(skip);
 
-        // DATE-WISE FILTERING LOGIC
+        // ALWAYS COMPUTE ALLOCATION-AWARE STATUS
+        // Use provided dates or default to "today" to show current allocations
+        let searchCheckIn, searchCheckOut;
+
         if (checkInDate && checkOutDate) {
-            const searchCheckIn = new Date(checkInDate);
+            searchCheckIn = new Date(checkInDate);
             searchCheckIn.setHours(23, 59, 59, 999); // Treat check-in as end of day to allow same-day turnover
-
-            const searchCheckOut = new Date(checkOutDate);
+            searchCheckOut = new Date(checkOutDate);
             searchCheckOut.setHours(0, 0, 0, 0); // Treated as morning checkout
-
-            // Fetch conflicting Allocations from RoomAllocation collection
-            // This is the source of truth for "Allocated" status
-            const conflictingAllocations = await RoomAllocation.find({
-                roomNumber: { $in: roomNumbers.map(r => r._id) },
-                status: 'Active',
-                checkInDate: { $lt: searchCheckOut },
-                checkOutDate: { $gt: searchCheckIn }
-            }).populate('booking');
-
-            // Create a map for quick lookup
-            const allocationMap = {};
-            conflictingAllocations.forEach(allocation => {
-                const roomId = allocation.roomNumber.toString();
-                // If multiple allocations overlap (shouldn't happen), pick the first one
-                if (!allocationMap[roomId]) {
-                    allocationMap[roomId] = allocation;
-                }
-            });
-
-            // Filter rooms based on date overlap
-            roomNumbers = roomNumbers.map(room => {
-                const roomObj = room.toObject();
-                const conflictingAllocation = allocationMap[room._id.toString()];
-
-                // Check maintenance schedule for date overlap
-                let maintenanceStatus = null;
-                if (roomObj.maintenanceSchedule && roomObj.maintenanceSchedule.length > 0) {
-                    const isInMaintenance = roomObj.maintenanceSchedule.some(maintenance => {
-                        return (
-                            searchCheckIn < new Date(maintenance.endDate) &&
-                            searchCheckOut > new Date(maintenance.startDate)
-                        );
-                    });
-                    if (isInMaintenance) {
-                        maintenanceStatus = 'Maintenance';
-                    }
-                }
-
-                if (maintenanceStatus) {
-                    roomObj.dateWiseStatus = maintenanceStatus;
-                    roomObj.showCustomerDetails = false;
-                } else if (conflictingAllocation) {
-                    // Found an allocation intersection
-                    roomObj.dateWiseStatus = 'Allocated';
-
-                    // Check if actually occupied (checked in)
-                    if (conflictingAllocation.booking && conflictingAllocation.booking.status === 'CheckedIn') {
-                        roomObj.dateWiseStatus = 'Occupied';
-                    }
-
-                    roomObj.showCustomerDetails = true;
-                    // Mock currentAllocation for display
-                    roomObj.currentAllocation = {
-                        booking: conflictingAllocation.booking,
-                        customer: conflictingAllocation.booking?.user, // We might need to populate user in query if needed, but 'booking' has 'user' which is ID usually. 
-                        // Ideally we populate booking.user in the find above.
-                        customerName: conflictingAllocation.guestName,
-                        checkInDate: conflictingAllocation.checkInDate,
-                        checkOutDate: conflictingAllocation.checkOutDate,
-                        allocatedAt: conflictingAllocation.createdAt
-                    };
-                } else {
-                    // No overlap - room is available for searched dates
-                    roomObj.dateWiseStatus = 'Available';
-                    roomObj.showCustomerDetails = false;
-                    // Clear customer details for display
-                    roomObj.currentAllocation = {
-                        booking: null,
-                        customer: null,
-                        customerName: null,
-                        checkInDate: null,
-                        checkOutDate: null,
-                        allocatedAt: null
-                    };
-                }
-
-                return roomObj;
-            });
-
-            // Apply status filter AFTER date-wise calculation
-            if (status) {
-                roomNumbers = roomNumbers.filter(room => room.dateWiseStatus === status);
-            }
-
-            // Apply customer name filter AFTER date-wise calculation
-            if (customerName) {
-                roomNumbers = roomNumbers.filter(room => {
-                    return room.showCustomerDetails &&
-                        room.currentAllocation?.customerName &&
-                        room.currentAllocation.customerName.toLowerCase().includes(customerName.toLowerCase());
-                });
-            }
         } else {
-            // No date filtering - show current status as-is
-            if (status) {
-                roomNumbers = roomNumbers.filter(room => room.status === status);
+            // Default to today's date to show current allocations
+            const today = new Date();
+            searchCheckIn = new Date(today);
+            searchCheckIn.setHours(0, 0, 0, 0);
+            searchCheckOut = new Date(today);
+            searchCheckOut.setHours(23, 59, 59, 999);
+        }
+
+        // Fetch conflicting Allocations from RoomAllocation collection
+        // This is the source of truth for "Allocated" status
+        const conflictingAllocations = await RoomAllocation.find({
+            roomNumber: { $in: roomNumbers.map(r => r._id) },
+            status: 'Active',
+            checkInDate: { $lt: searchCheckOut },
+            checkOutDate: { $gt: searchCheckIn }
+        }).populate('booking');
+
+        // Create a map for quick lookup
+        const allocationMap = {};
+        conflictingAllocations.forEach(allocation => {
+            const roomId = allocation.roomNumber.toString();
+            // If multiple allocations overlap (shouldn't happen), pick the first one
+            if (!allocationMap[roomId]) {
+                allocationMap[roomId] = allocation;
             }
+        });
+
+        // Compute allocation-aware status for all rooms
+        roomNumbers = roomNumbers.map(room => {
+            const roomObj = room.toObject();
+            const conflictingAllocation = allocationMap[room._id.toString()];
+
+            // Check maintenance schedule for date overlap
+            let maintenanceStatus = null;
+            if (roomObj.maintenanceSchedule && roomObj.maintenanceSchedule.length > 0) {
+                const isInMaintenance = roomObj.maintenanceSchedule.some(maintenance => {
+                    return (
+                        searchCheckIn < new Date(maintenance.endDate) &&
+                        searchCheckOut > new Date(maintenance.startDate)
+                    );
+                });
+                if (isInMaintenance) {
+                    maintenanceStatus = 'Maintenance';
+                }
+            }
+
+            if (maintenanceStatus) {
+                roomObj.dateWiseStatus = maintenanceStatus;
+                roomObj.showCustomerDetails = false;
+            } else if (conflictingAllocation) {
+                // Found an allocation intersection
+                roomObj.dateWiseStatus = 'Allocated';
+
+                // Check if actually occupied (checked in)
+                if (conflictingAllocation.booking && conflictingAllocation.booking.status === 'CheckedIn') {
+                    roomObj.dateWiseStatus = 'Occupied';
+                }
+
+                roomObj.showCustomerDetails = true;
+                // Mock currentAllocation for display
+                roomObj.currentAllocation = {
+                    booking: conflictingAllocation.booking,
+                    customer: conflictingAllocation.booking?.user,
+                    customerName: conflictingAllocation.guestName,
+                    checkInDate: conflictingAllocation.checkInDate,
+                    checkOutDate: conflictingAllocation.checkOutDate,
+                    allocatedAt: conflictingAllocation.createdAt
+                };
+            } else {
+                // No overlap - room is available for searched dates
+                roomObj.dateWiseStatus = 'Available';
+                roomObj.showCustomerDetails = false;
+                // Clear customer details for display
+                roomObj.currentAllocation = {
+                    booking: null,
+                    customer: null,
+                    customerName: null,
+                    checkInDate: null,
+                    checkOutDate: null,
+                    allocatedAt: null
+                };
+            }
+
+            return roomObj;
+        });
+
+        // Apply status filter AFTER date-wise calculation
+        if (status) {
+            roomNumbers = roomNumbers.filter(room => room.dateWiseStatus === status);
+        }
+
+        // Apply customer name filter AFTER date-wise calculation
+        if (customerName) {
+            roomNumbers = roomNumbers.filter(room => {
+                return room.showCustomerDetails &&
+                    room.currentAllocation?.customerName &&
+                    room.currentAllocation.customerName.toLowerCase().includes(customerName.toLowerCase());
+            });
         }
 
         const total = roomNumbers.length;
@@ -250,11 +253,13 @@ const getRoomNumbers = async (req, res) => {
                 pages: Math.ceil(total / limit)
             },
             data: roomNumbers,
-            dateFiltering: checkInDate && checkOutDate ? {
-                checkInDate,
-                checkOutDate,
-                message: 'Rooms filtered by date overlap. Checkout date is treated as free.'
-            } : null
+            dateFiltering: {
+                checkInDate: checkInDate || 'today',
+                checkOutDate: checkOutDate || 'today',
+                message: checkInDate && checkOutDate
+                    ? 'Rooms filtered by date overlap. Checkout date is treated as free.'
+                    : 'Showing current allocation status based on today\'s date.'
+            }
         });
 
     } catch (error) {

@@ -120,13 +120,13 @@ RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut
 
     // Check availability in RoomAllocation (Single Source of Truth)
     const RoomAllocation = mongoose.model('RoomAllocation');
-    // Note: We use flexible checking: if there is ANY overlap, it's not available.
-    // Overlap condition: RequestStart < ExistingEnd AND RequestEnd > ExistingStart
+    // Allow same-day turnover: if existing checkout equals new check-in, no conflict
+    // Conflict exists ONLY if: RequestStart < ExistingEnd AND RequestEnd > ExistingStart
     const hasConflict = await RoomAllocation.exists({
         roomNumber: this._id,
         status: 'Active',
-        checkInDate: { $lt: checkOut },
-        checkOutDate: { $gt: checkIn }
+        checkInDate: { $lt: checkOut },  // Existing check-in is before new checkout
+        checkOutDate: { $gt: checkIn }   // Existing checkout is AFTER new check-in (allows same-day)
     });
 
     if (hasConflict) return false;
