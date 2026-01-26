@@ -4,6 +4,7 @@ const Booking = require('../models/Booking');
 const Payment = require('../models/Payment');
 const Review = require('../models/Review');
 const RoomAllocation = require('../models/RoomAllocation');
+const RoomNumber = require('../models/RoomNumber');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -227,11 +228,26 @@ const updateBookingStatus = async (req, res) => {
         // Update room status based on booking status
         if (status === 'Confirmed' && oldStatus === 'Pending') {
             // Mark room as reserved when booking is confirmed
-            await Room.findByIdAndUpdate(booking.room, { status: 'Available' }); // Keep as available until check-in
+            // Note: RoomNumber status update might be needed here if we want to block specific room, 
+            // but usually specific room is assigned later or at check-in.
+            // If roomNumber is already assigned, we could mark it as Allocated.
+            if (booking.roomNumber) {
+                await RoomNumber.findByIdAndUpdate(booking.roomNumber, { status: 'Allocated' });
+            }
         } else if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
-            await Room.findByIdAndUpdate(booking.room, { status: 'Occupied' });
+            if (booking.roomNumber) {
+                const roomNumber = await RoomNumber.findById(booking.roomNumber);
+                if (roomNumber) {
+                    await roomNumber.markOccupied(new Date());
+                }
+            }
         } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
-            await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
+            if (booking.roomNumber) {
+                const roomNumber = await RoomNumber.findById(booking.roomNumber);
+                if (roomNumber) {
+                    await roomNumber.deallocate();
+                }
+            }
 
             // Mark allocation as completed
             await RoomAllocation.findOneAndUpdate(
@@ -240,7 +256,20 @@ const updateBookingStatus = async (req, res) => {
             );
 
         } else if (status === 'Cancelled' || status === 'NoShow') {
-            await Room.findByIdAndUpdate(booking.room, { status: 'Available' });
+            if (booking.roomNumber) {
+                // If it was allocated, we should free it
+                await RoomNumber.findByIdAndUpdate(booking.roomNumber, {
+                    status: 'Available',
+                    currentAllocation: {
+                        booking: null,
+                        customer: null,
+                        customerName: null,
+                        checkInDate: null,
+                        checkOutDate: null,
+                        allocatedAt: null
+                    }
+                });
+            }
 
             // Cancel the allocation
             await RoomAllocation.findOneAndUpdate(

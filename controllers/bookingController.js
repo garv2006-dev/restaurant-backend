@@ -1296,7 +1296,7 @@ Best regards,
 
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
-        subject: `🏨 Welcome! Check - In Confirmed - ${booking.bookingId} | Luxury Hotel`,
+        subject: `Welcome! Check - In Confirmed - ${booking.bookingId} | Luxury Hotel`,
         message: plainTextMessage,
         html: htmlMessage,
       });
