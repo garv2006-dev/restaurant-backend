@@ -708,12 +708,38 @@ Best regards,
         bookingId: booking.bookingId,
       });
 
-      // Create notification in database
+      // Create notification in database for USER
       await createRoomBookingNotification(
         req.user.id,
         { booking, room: booking.room, status: booking.status },
         'created'
       );
+
+      // NOTIFY ADMINS: Find all admins and send notifications
+      const admins = await User.find({ role: 'admin' });
+      if (admins && admins.length > 0) {
+        for (const admin of admins) {
+          try {
+            await createRoomBookingNotification(
+              admin._id,
+              { booking, room: booking.room, status: booking.status },
+              'created_admin'
+            );
+
+            // Also emit real-time event specifically for this admin's notification center
+            emitUserNotification(admin._id, {
+              title: "🔔 New Booking Received",
+              message: `New booking ${booking.bookingId} from ${guestDetails.primaryGuest.name}`,
+              type: "room_booking",
+              bookingId: booking.bookingId,
+            });
+
+          } catch (adminNotifError) {
+            console.error(`Failed to notify admin ${admin._id}:`, adminNotifError);
+          }
+        }
+        console.log(`Notified ${admins.length} admins about new booking ${booking.bookingId}`);
+      }
     } catch (notificationError) {
       console.error("Notification creation error:", notificationError);
     }

@@ -168,13 +168,18 @@ const clearAllNotifications = async (req, res) => {
 const createRoomBookingNotification = async (userId, bookingData, action) => {
     try {
         const { booking, room, status } = bookingData;
-        
+
         let title, message, bookingStatus;
 
         switch (action) {
             case 'created':
                 title = 'New Booking Created';
                 message = `Your room booking ${booking.bookingId} for ${room.name} has been created and is pending confirmation.`;
+                bookingStatus = 'Pending';
+                break;
+            case 'created_admin':
+                title = 'New Booking Received';
+                message = `New booking ${booking.bookingId} received for ${room.name}. User: ${booking.guestDetails?.primaryGuest?.name || 'Guest'}. Status: Pending.`;
                 bookingStatus = 'Pending';
                 break;
             case 'confirmed':
@@ -283,7 +288,7 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
 const createPaymentNotification = async (userId, bookingData, paymentStatus) => {
     try {
         const { booking, room } = bookingData;
-        
+
         let title, message;
 
         if (paymentStatus === 'completed' || paymentStatus === 'Paid') {
@@ -366,7 +371,7 @@ const createPromotionNotification = async (req, res) => {
 
         const notifications = [];
         const newNotifications = [];
-        
+
         for (const userId of userIds) {
             try {
                 // Check if notification already exists BEFORE creating
@@ -451,7 +456,7 @@ const createSystemNotification = async (req, res) => {
 
         const notifications = [];
         const newNotifications = [];
-        
+
         for (const userId of userIds) {
             try {
                 // Check if notification already exists BEFORE creating
