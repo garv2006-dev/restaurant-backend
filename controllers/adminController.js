@@ -486,15 +486,9 @@ const updateBookingStatus = async (req, res) => {
                 notificationMessage = `Your booking ${booking.bookingId} has been marked as no-show.`;
             }
 
-            if (notificationAction) {
-                // Send real-time notification
-                emitUserNotification(booking.user._id || booking.user, {
-                    title: notificationTitle,
-                    message: notificationMessage,
-                    type: status === 'Confirmed' ? 'success' : status === 'Cancelled' || status === 'NoShow' ? 'warning' : 'info',
-                    bookingId: booking.bookingId,
-                });
 
+
+            if (notificationAction) {
                 // Create database notification
                 await createRoomBookingNotification(
                     booking.user._id || booking.user,
