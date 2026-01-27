@@ -700,13 +700,7 @@ Best regards,
         paymentStatus: booking.paymentStatus,
       });
 
-      // Send notification to user
-      emitUserNotification(req.user.id, {
-        title: "🏨 Booking Created Successfully!",
-        message: `Your booking ${booking.bookingId} has been created and is pending admin confirmation`,
-        type: "success",
-        bookingId: booking.bookingId,
-      });
+
 
       // Create notification in database for USER
       await createRoomBookingNotification(
@@ -726,13 +720,7 @@ Best regards,
               'created_admin'
             );
 
-            // Also emit real-time event specifically for this admin's notification center
-            emitUserNotification(admin._id, {
-              title: "🔔 New Booking Received",
-              message: `New booking ${booking.bookingId} from ${guestDetails.primaryGuest.name}`,
-              type: "room_booking",
-              bookingId: booking.bookingId,
-            });
+
 
           } catch (adminNotifError) {
             console.error(`Failed to notify admin ${admin._id}:`, adminNotifError);
@@ -750,11 +738,7 @@ Best regards,
       bookingId: booking.bookingId,
       paymentId: payment?.paymentId || null,
       message: "Booking created successfully and is pending admin confirmation",
-      notificationTrigger: {
-        type: 'booking_pending',
-        bookingId: booking.bookingId,
-        message: `Your booking has been received and is pending confirmation.Booking ID: ${booking.bookingId} `
-      }
+
     });
   } catch (error) {
     console.error("Create booking error:", error);
