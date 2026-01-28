@@ -111,6 +111,11 @@ RoomNumberSchema.index({ roomNumber: 1, roomType: 1 }, { unique: true });
 
 // Method to check if room is available for given dates
 RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut) {
+    // Check strict manual status
+    if (this.status === 'Maintenance' || this.status === 'Out of Service') {
+        return false;
+    }
+
     // Check if room is in maintenance during the requested dates
     const isInMaintenance = this.maintenanceSchedule.some(maintenance => {
         return (checkIn <= maintenance.endDate && checkOut >= maintenance.startDate);

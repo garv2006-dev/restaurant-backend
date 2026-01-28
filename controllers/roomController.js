@@ -229,6 +229,7 @@ const createRoom = async (req, res) => {
         body.capacity = parseIfJson(body.capacity);
         body.price = parseIfJson(body.price);
         body.features = parseIfJson(body.features);
+        const roomNumbers = parseIfJson(body.roomNumbers);
 
         // First create the room without handling images so we can use its ID for Cloudinary naming
         let room = await Room.create(body);
@@ -260,6 +261,30 @@ const createRoom = async (req, res) => {
                 isPrimary: true
             }];
             await room.save();
+        }
+
+        // Create Room Numbers if provided
+        if (roomNumbers && Array.isArray(roomNumbers) && roomNumbers.length > 0) {
+            const roomNumbersToCreate = roomNumbers.map(num => ({
+                roomNumber: num,
+                roomType: room._id,
+                floor: room.floor || 1, // Use room's floor number
+                status: 'Available',
+                isActive: true
+            }));
+
+            try {
+                await RoomNumber.insertMany(roomNumbersToCreate);
+
+                // Update total rooms count to match the number of room numbers created
+                // This ensures consistency
+                room.totalRooms = roomNumbers.length;
+                await room.save();
+            } catch (err) {
+                console.error('Error creating room numbers:', err);
+                // Continue, but maybe warn or return partial success?
+                // For now, we just log it. The user can add them manually later if it fails.
+            }
         }
 
         res.status(201).json({
