@@ -354,9 +354,10 @@ const createBooking = async (req, res) => {
     const availableRoomCount = await RoomNumber.getAvailableCount(roomId, checkIn, checkOut);
 
     if (availableRoomCount <= 0) {
-      console.warn(`Booking created as WAITLIST / PENDING: All rooms of type ${roomId} are booked for ${checkIn} - ${checkOut}`);
-      // We DO NOT block here anymore, per user request to allow "Not Allocated" bookings (Waitlist).
-      // The code below will fail to find 'availableRoomNumber' and skip allocation, correctly resulting in "Not Allocated".
+      return res.status(400).json({
+        success: false,
+        message: "Room is sold out for the selected dates. Please choose different dates or room type.",
+      });
     }
 
     // Calculate final amounts

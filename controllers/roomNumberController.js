@@ -173,9 +173,15 @@ const getRoomNumbers = async (req, res) => {
             const roomObj = room.toObject();
             const conflictingAllocation = allocationMap[room._id.toString()];
 
-            // Check maintenance schedule for date overlap
+            // Priority 1: Check Manual Strict Status
+            // If the room is manually set to Maintenance/Out of Service, it overrides everything else
             let maintenanceStatus = null;
-            if (roomObj.maintenanceSchedule && roomObj.maintenanceSchedule.length > 0) {
+            if (roomObj.status === 'Maintenance' || roomObj.status === 'Out of Service') {
+                maintenanceStatus = roomObj.status;
+            }
+
+            // Priority 2: Check maintenance schedule for date overlap
+            if (!maintenanceStatus && roomObj.maintenanceSchedule && roomObj.maintenanceSchedule.length > 0) {
                 const isInMaintenance = roomObj.maintenanceSchedule.some(maintenance => {
                     return (
                         searchCheckIn < new Date(maintenance.endDate) &&
@@ -388,6 +394,14 @@ const allocateRoomNumber = async (req, res) => {
             return res.status(404).json({
                 success: false,
                 message: 'Room number not found'
+            });
+        }
+
+        // Strict Status Check
+        if (roomNumber.status === 'Maintenance' || roomNumber.status === 'Out of Service') {
+            return res.status(400).json({
+                success: false,
+                message: `Room is currently ${roomNumber.status} and cannot be allocated.`
             });
         }
 
