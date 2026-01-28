@@ -18,8 +18,17 @@ const createTransporter = () => {
 // @route   POST /api/contact
 // @access  Public
 exports.sendContactEmail = async (req, res) => {
+  console.log('Contact form submission received');
   try {
     const { name, email, phone, subject, message } = req.body;
+
+    // Log configuration status (without exposing secrets)
+    console.log('Email configuration check:', {
+      hasEmailUser: !!process.env.EMAIL_USER,
+      hasEmailPass: !!process.env.EMAIL_PASS,
+      emailService: process.env.EMAIL_SERVICE || 'default(gmail)'
+    });
+
 
     // Validation - Check required fields
     if (!name || !email || !phone || !subject || !message) {
@@ -284,7 +293,13 @@ exports.sendContactEmail = async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Contact form error:', error);
+    console.error('Contact form error details:', {
+      message: error.message,
+      code: error.code,
+      stack: error.stack,
+      command: error.command
+    });
+
 
     // Provide more specific error messages
     if (error.code === 'EAUTH') {
