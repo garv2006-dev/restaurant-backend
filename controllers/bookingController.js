@@ -615,7 +615,8 @@ const createBooking = async (req, res) => {
             payment,
             booking,
             amount: totalAmount,
-            method: normalizedPaymentMethod
+            method: normalizedPaymentMethod,
+            room
           },
           'payment_completed'
         );
