@@ -1078,39 +1078,43 @@ const cancelBooking = async (req, res) => {
       console.error("Email sending error:", emailError);
     }
 
-    // Emit booking status change notification
+    // Create notification in database and emit socket event via controller
     try {
-      // Check if socket functions are available
-      if (typeof emitBookingStatusChange === 'function') {
-        emitBookingStatusChange(
-          booking.bookingId,
-          "Cancelled",
-          booking.user.toString()
-        );
-      }
-
-      if (typeof emitUserNotification === 'function') {
-        emitUserNotification(booking.user.toString(), {
-          title: "❌ Booking Cancelled",
-          message: `Your booking ${booking.bookingId} has been cancelled successfully${refundAmount > 0 ? `. Refund of ₹${refundAmount.toFixed(2)} will be processed within 5-7 business days` : ''} `,
-          type: "warning",
-          bookingId: booking.bookingId,
-        });
-      }
-
-      // Create notification in database
       const room = await Room.findById(booking.room);
       if (room && typeof createRoomBookingNotification === 'function') {
+        // 1. Notify the booking owner (User)
         await createRoomBookingNotification(
           booking.user.toString(),
           { booking, room, status: 'Cancelled' },
           req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
         );
+
+        // 2. If User cancelled, also notify ALL Admins
+        if (req.user.role !== 'admin') {
+          const admins = await User.find({ role: 'admin' });
+          if (admins && admins.length > 0) {
+            for (const admin of admins) {
+              // Skip if admin is the same as the booking user
+              if (admin._id.toString() === booking.user.toString()) continue;
+
+              try {
+                await createRoomBookingNotification(
+                  admin._id,
+                  { booking, room, status: 'Cancelled' },
+                  'cancelled_by_user'
+                );
+              } catch (err) { console.error(`Failed to notify admin ${admin._id}`, err); }
+            }
+          }
+        }
       }
       console.log('Notifications sent successfully');
+
+      // Emit socket event for admin dashboard update
+      emitBookingStatusChange(booking.bookingId, 'Cancelled', booking.user.toString());
+
     } catch (notificationError) {
       console.error("Notification creation error:", notificationError);
-      // Don't fail the request if notification fails
     }
 
     console.log('Cancel booking completed successfully');
@@ -1182,36 +1186,25 @@ const confirmBooking = async (req, res) => {
       console.error("Confirmation email sending error:", emailError);
     }
 
-    // Emit real-time notifications
+    // Create notification in database and emit socket event via controller
+    // Emit booking status change and notifications
     try {
-      // Notify user
-      emitUserNotification(booking.user._id.toString(), {
-        title: "✅ Booking Confirmed!",
-        message: `Your booking ${booking.bookingId} has been confirmed by admin`,
-        type: "success",
-        bookingId: booking.bookingId,
-      });
-
-      // Emit booking status change
-      emitBookingStatusChange(
-        booking.bookingId,
-        "Confirmed",
-        booking.user._id.toString()
-      );
-
-      // Create notification in database
+      // Create notification in database and emit socket event
       await createRoomBookingNotification(
         booking.user._id.toString(),
         { booking, room: booking.room, status: 'Confirmed' },
         'confirmed_by_admin'
       );
+
+      // Emit socket event for admin dashboard update
+      emitBookingStatusChange(booking.bookingId, 'Confirmed', booking.user._id.toString());
+
     } catch (notificationError) {
       console.error("Notification error:", notificationError);
     }
 
     res.status(200).json({
       success: true,
-      message: "Booking confirmed successfully",
       data: booking,
     });
   } catch (error) {
@@ -1222,6 +1215,7 @@ const confirmBooking = async (req, res) => {
     });
   }
 };
+
 
 // @desc    Check-in booking (Admin/Staff only)
 // @route   PUT /api/bookings/:id/checkin
