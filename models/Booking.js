@@ -316,8 +316,8 @@ BookingSchema.methods.canBeCancelled = function () {
         return true;
     }
 
-    // For Confirmed bookings, allow cancellation up to 2 hours before check-in
-    return hoursUntilCheckIn > 2 && ['Confirmed'].includes(this.status);
+    // Allow cancellation for Confirmed bookings regardless of time (fee logic handles the penalty)
+    return ['Confirmed'].includes(this.status);
 };
 
 // Method to calculate cancellation fee
