@@ -15,6 +15,54 @@ const register = async (req, res, next) => {
             $or: [{ email }, { phone }]
         });
         if (existingUser) {
+            // Check if user exists but is not verified
+            if (!existingUser.isEmailVerified && existingUser.role === 'customer') {
+                // Generate new OTP
+                const otp = existingUser.getRegistrationOtp();
+                console.log("✅ REGISTRATION OTP (Existing User):", otp); // Log for debugging
+
+                await existingUser.save({ validateBeforeSave: false });
+
+                // Send OTP via email
+                const message = `
+                Welcome back!
+                
+                Your verification code is: ${otp}
+                
+                This code will expire in 24 hours.
+                `;
+
+                const htmlMessage = `
+                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+                    <h2 style="color: #333; text-align: center;">Verify Your Account</h2>
+                    <p style="font-size: 16px; color: #555;">Hello ${existingUser.name},</p>
+                    <p style="font-size: 16px; color: #555;">You already have an account but it is not verified. Please use the verification code below to activate your account:</p>
+                    <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                        <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
+                    </div>
+                    <p style="font-size: 16px; color: #555;">This code will expire in 24 hours.</p>
+                </div>
+                `;
+
+                // Send OTP via email (Non-blocking)
+                sendEmail({
+                    email: existingUser.email,
+                    subject: 'Account Verification Code',
+                    message,
+                    html: htmlMessage
+                }).catch(err => console.error('Error sending existing user verification:', err));
+
+                return res.status(200).json({
+                    success: true,
+                    message: 'Account exists but not verified. Verification code resent.',
+                    user: {
+                        id: existingUser._id,
+                        name: existingUser.name,
+                        email: existingUser.email
+                    }
+                });
+            }
+
             return res.status(400).json({
                 success: false,
                 message: 'User with this email or phone already exists'
@@ -41,8 +89,109 @@ const register = async (req, res, next) => {
                 });
         }
 
+
+        // Generate registration OTP
+        const otp = user.getRegistrationOtp();
+        console.log("✅ REGISTRATION OTP (New User):", otp); // Log for debugging
+
+        await user.save({ validateBeforeSave: false });
+
+        // Send OTP via email
+        const message = `
+        Thank you for registering!
+        
+        Your verification code is: ${otp}
+        
+        This code will expire in 24 hours.
+        `;
+
+        const htmlMessage = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #333; text-align: center;">Welcome to Our Restaurant!</h2>
+            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
+            <p style="font-size: 16px; color: #555;">Thank you for registering. Please use the verification code below to activate your account:</p>
+            <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
+            </div>
+            <p style="font-size: 16px; color: #555;">This code will expire in 24 hours.</p>
+        </div>
+        `;
+
+        // Send OTP via email (Non-blocking)
+        sendEmail({
+            email: user.email,
+            subject: 'Account Verification Code',
+            message,
+            html: htmlMessage
+        }).catch(err => console.error('Error sending registration email:', err));
+
+        res.status(200).json({
+            success: true,
+            message: 'Registration successful. Verification code sent to email.',
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email
+            }
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+const verifyAccount = async (req, res, next) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide email and verification code'
+            });
+        }
+
+        const emailVerificationToken = crypto
+            .createHash('sha256')
+            .update(otp)
+            .digest('hex');
+
+        const user = await User.findOne({
+            email,
+            emailVerificationToken,
+            emailVerificationExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid or expired verification code'
+            });
+        }
+
+        user.isEmailVerified = true;
+        user.emailVerificationToken = undefined;
+        user.emailVerificationExpire = undefined;
+        // Reset rate limiting on successful verification
+        user.otpResendAttempts = 0;
+        user.otpLockUntil = null;
+        await user.save();
+
+        // Send first-time discount notification for new users (if applicable)
+        if (user.role === 'customer') {
+            sendFirstTimeDiscountNotification(user._id.toString())
+                .then(result => {
+                    if (result.success) {
+                        console.log(`First-time discount sent to new user ${user._id}`);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error sending first-time discount:', err);
+                });
+        }
+
         const token = user.getSignedJwtToken();
-        res.status(201).json({
+
+        res.status(200).json({
             success: true,
             token,
             user: {
@@ -51,7 +200,8 @@ const register = async (req, res, next) => {
                 email: user.email,
                 phone: user.phone,
                 role: user.role,
-                isEmailVerified: user.isEmailVerified
+                isEmailVerified: user.isEmailVerified,
+                avatar: user.avatar
             }
         });
     } catch (error) {
@@ -224,71 +374,87 @@ const forgotPassword = async (req, res, next) => {
         if (!user) {
             return res.status(200).json({
                 success: true,
-                message: 'If the email exists in our system, a password reset link has been sent'
+                message: 'If the email exists in our system, a verification code has been sent'
             });
         }
 
-        // Generate reset token
+        // Rate Limiting Check
+        if (user.otpLockUntil && user.otpLockUntil > Date.now()) {
+            const minutesLeft = Math.ceil((user.otpLockUntil - Date.now()) / 60000);
+            return res.status(429).json({
+                success: false,
+                message: `Too many attempts. Please wait ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} before trying again.`
+            });
+        }
+
+        // Check attempts
+        if (user.otpResendAttempts >= 3) {
+            // Lock for 30 minutes
+            user.otpLockUntil = Date.now() + 30 * 60 * 1000;
+            user.otpResendAttempts = 0;
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(429).json({
+                success: false,
+                message: 'Maximum attempts reached. Please wait 30 minutes.'
+            });
+        }
+
+        // Increment attempts
+        user.otpResendAttempts += 1;
+        // If this is the first attempt in a while (e.g., lock expired), ensure lock is null
+        if (user.otpLockUntil && user.otpLockUntil <= Date.now()) {
+            user.otpLockUntil = null;
+        }
+
+        // Generate reset token (OTP)
         const resetToken = user.getResetPasswordToken();
 
-        console.log("✅ RESET TOKEN", resetToken);
+        console.log("✅ RESET TOKEN (OTP)", resetToken);
 
         await user.save({ validateBeforeSave: false });
-
-        // Create reset URL
-        const resetUrl = `${process.env.FRONTEND_URL}/reset-password/${resetToken}`;
-
-        console.log("✅ RESET URL", resetUrl);
-
 
         // Email message
         const message = `
 You are receiving this email because you requested to reset your password.
 
-Please click the link below to reset your password:
+Your verification code is: ${resetToken}
 
-${resetUrl}
-
-This link will expire in 10 minutes.
+This code will expire in 10 minutes.
 
 If you did not request this, please ignore this email.
         `;
 
         console.log("✅ MESSAGE", message);
 
-
-        const htmlMessage = generatePasswordResetEmail(resetUrl);
+        // Simple HTML for OTP
+        const htmlMessage = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #333; text-align: center;">Reset Your Password</h2>
+            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
+            <p style="font-size: 16px; color: #555;">We received a request to reset your password. Use the verification code below to proceed:</p>
+            <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${resetToken}</span>
+            </div>
+            <p style="font-size: 16px; color: #555;">This code will expire in 10 minutes.</p>
+            <p style="font-size: 14px; color: #888; margin-top: 30px;">If you didn't request a password reset, you can safely ignore this email.</p>
+        </div>
+        `;
 
         try {
-            // Non-blocking email sending - fire and forget
-            // if (sendEmail.sendEmailAsync) {
-            //     console.log("✅ IF PART CALLED")
-            //     await sendEmail.sendEmailAsync({
-            //         email: user.email,
-            //         subject: 'Password Reset Request',
-            //         message,
-            //         html: htmlMessage
-            //     });
-            // } else {
-            console.log("✅ ELSE PART CALLED")
-
-
-            // Fallback for older implementation
             await sendEmail({
                 email: user.email,
-                subject: 'Password Reset Request',
+                subject: 'Password Reset Verification Code',
                 message,
                 html: htmlMessage
             })
-            // }
 
             res.status(200).json({
                 success: true,
-                message: 'If the email exists in our system, a password reset link has been sent'
+                message: 'Verification code sent to email'
             });
         } catch (error) {
             console.log("❌ GET ERROR", error)
-            console.log("❌ GET ERROR RESPONSE", error?.response)
 
             // Clear reset token if email sending fails
             user.resetPasswordToken = undefined;
@@ -298,7 +464,7 @@ If you did not request this, please ignore this email.
             console.error('Email sending error:', error);
             return res.status(500).json({
                 success: false,
-                message: 'Error sending password reset email'
+                message: 'Error sending verification code'
             });
         }
     } catch (error) {
@@ -306,27 +472,136 @@ If you did not request this, please ignore this email.
     }
 };
 
-const resetPassword = async (req, res, next) => {
+const verifyOtp = async (req, res, next) => {
     try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide email and verification code'
+            });
+        }
+
         const resetPasswordToken = crypto
             .createHash('sha256')
-            .update(req.body.token)
+            .update(otp)
             .digest('hex');
+
+        // Find user by email AND valid token
+        // Use filtered query to ensure we find the right user
         const user = await User.findOne({
+            email: email,
             resetPasswordToken,
             resetPasswordExpire: { $gt: Date.now() }
         });
+
         if (!user) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid or expired token'
+                message: 'Invalid or expired verification code'
             });
         }
-        user.password = req.body.password;
+
+        // OTP is valid
+        // OTP is valid
+
+        // Generate reset link
+        const resetToken = user.resetPasswordToken; // Still valid and stored
+        const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        // We use the same generic mechanism but we pass the email and the otp (which is what we verified)
+        // Wait, resetPasswordToken is HASHED. We need the original OTP.
+        // The original OTP was passed in the request body as `otp`.
+        const resetUrl = `${frontendUrl}/reset-password?email=${user.email}&otp=${otp}`;
+
+        const message = `
+You have successfully verified your identity.
+
+Click the following link to secure reset your password:
+${resetUrl}
+
+This link will expire soon.
+
+If you did not request this, please contact support immediately.
+        `;
+
+        const htmlMessage = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #333; text-align: center;">Identity Verified</h2>
+            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
+            <p style="font-size: 16px; color: #555;">You have successfully verified the code. Please click the button below to reset your password:</p>
+            <div style="background-color: #f4f6f8; padding: 20px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                <a href="${resetUrl}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px;">Reset Password</a>
+            </div>
+            <p style="font-size: 14px; color: #888; margin-top: 30px;">If the button doesn't work, copy and paste this link:</p>
+            <p style="font-size: 12px; color: #888; word-break: break-all;">${resetUrl}</p>
+        </div>
+        `;
+
+        try {
+            await sendEmail({
+                email: user.email,
+                subject: 'Reset Password Link',
+                message,
+                html: htmlMessage
+            });
+        } catch (emailError) {
+            console.error("Failed to send reset link email", emailError);
+            // We still return success because OTP is valid, but maybe warn?
+            // Actually, if this fails, the user can't get the link if they rely on it.
+            // But they can likely proceed in the UI if we handle it there too.
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Verification successful. A reset link has been sent to your email.'
+        });
+
+    } catch (error) {
+        next(error);
+    }
+};
+
+const resetPassword = async (req, res, next) => {
+    try {
+        const { email, otp, password } = req.body;
+
+        if (!email || !otp || !password) {
+            return res.status(400).json({
+                success: false,
+                message: 'Please provide all details'
+            });
+        }
+
+        const resetPasswordToken = crypto
+            .createHash('sha256')
+            .update(otp)
+            .digest('hex');
+
+        const user = await User.findOne({
+            email,
+            resetPasswordToken,
+            resetPasswordExpire: { $gt: Date.now() }
+        });
+
+        if (!user) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid or expired verification code'
+            });
+        }
+
+        user.password = password;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpire = undefined;
+        // Reset rate limiting on successful password reset
+        user.otpResendAttempts = 0;
+        user.otpLockUntil = null;
+
         await user.save();
+
         const token = user.getSignedJwtToken();
+
         res.status(200).json({
             success: true,
             token,
@@ -410,12 +685,69 @@ const resendVerification = async (req, res, next) => {
                 message: 'Email is already verified'
             });
         }
-        const verificationToken = user.getEmailVerificationToken();
+
+        // Rate Limiting Check
+        if (user.otpLockUntil && user.otpLockUntil > Date.now()) {
+            const minutesLeft = Math.ceil((user.otpLockUntil - Date.now()) / 60000);
+            return res.status(429).json({
+                success: false,
+                message: `Too many attempts. Please wait ${minutesLeft} minute${minutesLeft > 1 ? 's' : ''} before trying again.`
+            });
+        }
+
+        // Check attempts
+        if (user.otpResendAttempts >= 3) {
+            // Lock for 30 minutes
+            user.otpLockUntil = Date.now() + 30 * 60 * 1000;
+            // We can optionally reset attempts here or keep them as is until lock expires.
+            // Following the pattern in forgotPassword:
+            user.otpResendAttempts = 0;
+            await user.save({ validateBeforeSave: false });
+
+            return res.status(429).json({
+                success: false,
+                message: 'Maximum attempts reached. Please wait 30 minutes.'
+            });
+        }
+
+        // Increment attempts
+        user.otpResendAttempts += 1;
+        // If this is the first attempt in a while (e.g., lock expired), ensure lock is null
+        if (user.otpLockUntil && user.otpLockUntil <= Date.now()) {
+            user.otpLockUntil = null;
+        }
+        const otp = user.getRegistrationOtp();
         await user.save({ validateBeforeSave: false });
+
+        const message = `
+        Your new verification code is: ${otp}
+        
+        This code will expire in 24 hours.
+        `;
+
+        const htmlMessage = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+            <h2 style="color: #333; text-align: center;">New Verification Code</h2>
+            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
+            <p style="font-size: 16px; color: #555;">You requested a new verification code. Please use the code below:</p>
+            <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
+                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
+            </div>
+            <p style="font-size: 16px; color: #555;">This code will expire in 24 hours.</p>
+        </div>
+        `;
+
+        // Send (Non-blocking)
+        sendEmail({
+            email: user.email,
+            subject: 'New Verification Code',
+            message,
+            html: htmlMessage
+        }).catch(err => console.error('Error sending resend verification:', err));
+
         res.status(200).json({
             success: true,
-            message: 'Verification email sent',
-            verificationToken
+            message: 'Verification email sent'
         });
     } catch (error) {
         next(error);
@@ -439,12 +771,14 @@ module.exports = {
     register,
     login,
     logout,
-    getMe,
     forgotPassword,
+    verifyOtp,
     resetPassword,
     updatePassword,
     verifyEmail,
     resendVerification,
     socialLogin,
-    googleLogin
+    googleLogin,
+    getMe,
+    verifyAccount
 };

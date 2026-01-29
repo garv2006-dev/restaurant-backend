@@ -24,7 +24,7 @@ const UserSchema = new mongoose.Schema(
     phone: {
       type: String,
       sparse: true,
-      required:false,
+      required: false,
       match: [/^\+?[1-9]\d{0,15}$/, "Please add a valid phone number"],
     },
 
@@ -115,6 +115,15 @@ const UserSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // OTP rate limiting for password reset
+    otpResendAttempts: {
+      type: Number,
+      default: 0
+    },
+    otpLockUntil: {
+      type: Date,
+      default: null
+    }
   },
   {
     timestamps: true,
@@ -147,9 +156,10 @@ UserSchema.methods.matchPassword = async function (enteredPassword) {
 };
 
 // Generate and hash password token
+// Generate and hash password token
 UserSchema.methods.getResetPasswordToken = function () {
-  // Generate token
-  const resetToken = crypto.randomBytes(20).toString("hex");
+  // Generate 6-digit OTP
+  const resetToken = Math.floor(100000 + Math.random() * 900000).toString();
 
   // Hash token and set to resetPasswordToken field
   this.resetPasswordToken = crypto
@@ -175,6 +185,23 @@ UserSchema.methods.getEmailVerificationToken = function () {
   this.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
 
   return verificationToken;
+};
+
+// Generate registration OTP
+UserSchema.methods.getRegistrationOtp = function () {
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  // Hash token and set to emailVerificationToken field
+  this.emailVerificationToken = crypto
+    .createHash("sha256")
+    .update(otp)
+    .digest("hex");
+
+  // Set expire (24 hours)
+  this.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000;
+
+  return otp;
 };
 
 // Remove sensitive information from JSON output

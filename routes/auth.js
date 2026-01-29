@@ -5,11 +5,13 @@ const {
     logout,
     getMe,
     forgotPassword,
+    verifyOtp,
     resetPassword,
     updatePassword,
     verifyEmail,
     resendVerification,
-    googleLogin
+    googleLogin,
+    verifyAccount
 } = require('../controllers/authController');
 const { protect } = require('../middleware/auth');
 const { validateRequest } = require('../middleware/validation');
@@ -73,12 +75,27 @@ const forgotPasswordValidation = [
         .withMessage('Please provide a valid email')
 ];
 
+// Verify OTP validation
+const verifyOtpValidation = [
+    body('email')
+        .isEmail()
+        .normalizeEmail()
+        .withMessage('Please provide a valid email'),
+    body('otp')
+        .notEmpty()
+        .withMessage('Verification code is required')
+];
+
 // Reset password validation
 const resetPasswordValidation = [
     ...passwordValidation,
-    body('token')
+    body('email')
+        .isEmail()
+        .normalizeEmail()
+        .withMessage('Please provide a valid email'),
+    body('otp')
         .notEmpty()
-        .withMessage('Reset token is required')
+        .withMessage('Verification code is required')
 ];
 
 // @desc    Register user
@@ -116,6 +133,11 @@ router.put('/updatepassword', protect, updatePasswordValidation, validateRequest
 // @access  Public
 router.post('/forgotpassword', forgotPasswordValidation, validateRequest, forgotPassword);
 
+// @desc    Verify OTP
+// @route   POST /api/auth/verify-otp
+// @access  Public
+router.post('/verify-otp', verifyOtpValidation, validateRequest, verifyOtp);
+
 // @desc    Reset password
 // @route   PUT /api/auth/resetpassword
 // @access  Public
@@ -130,5 +152,10 @@ router.get('/verify/:token', verifyEmail);
 // @route   POST /api/auth/resend-verification
 // @access  Public
 router.post('/resend-verification', forgotPasswordValidation, validateRequest, resendVerification);
+
+// @desc    Verify account with OTP
+// @route   POST /api/auth/verify-account
+// @access  Public
+router.post('/verify-account', verifyOtpValidation, validateRequest, verifyAccount);
 
 module.exports = router;
