@@ -103,63 +103,33 @@ const sendEmailAsync = async (options) => {
 
         return true;
     } catch (err) {
-        console.error("Brevo email error:", err?.response);
-        return false;
+        console.error("Brevo email error:", err?.response?.body || err.message);
+        console.log("Falling back to SMTP/Nodemailer...");
+
+        // Fallback to SMTP
+        try {
+            if (!validateEmailConfig()) {
+                throw new Error('Email configuration missing for SMTP fallback');
+            }
+
+            const info = await getTransporter().sendMail({
+                from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
+                to: options.email,
+                subject: options.subject,
+                text: options.message,
+                html: options.html || options.message.replace(/\n/g, '<br>')
+            });
+
+            log('INFO', 'Email sent successfully (fallback async)', {
+                to: options.email,
+                messageId: info.messageId
+            });
+            return true;
+        } catch (smtpError) {
+            console.error("SMTP fallback error:", smtpError.message);
+            throw new Error('Email sending failed (both providers)');
+        }
     }
-
-
-    // if (!validateEmailConfig()) {
-    //     log('ERROR', 'Email not sent - missing credentials', { to: options.email });
-    //     return Promise.resolve(null);
-    // }
-
-    // if (!options.email || !options.subject) {
-    //     log('ERROR', 'Email not sent - missing required fields', {
-    //         email: options.email,
-    //         subject: options.subject
-    //     });
-    //     return Promise.resolve(null);
-    // }
-
-    // log('INFO', 'Sending email (async/non-blocking)', { to: options.email, subject: options.subject });
-
-    // // Fire-and-forget pattern
-    // getTransporter().sendMail(
-    //     {
-    //         from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-    //         to: options.email,
-    //         subject: options.subject,
-    //         text: options.message,
-    //         html: options.html || options.message.replace(/\n/g, '<br>')
-    //     },
-    //     (error, info) => {
-    //         if (error) {
-    //             log('ERROR', 'Email sending failed (async)', {
-    //                 to: options.email,
-    //                 subject: options.subject,
-    //                 error: error.message,
-    //                 code: error.code,
-    //                 command: error.command
-    //             });
-
-    //             // For Gmail: common errors
-    //             if (error.message.includes('Invalid login')) {
-    //                 log('ERROR', 'GMAIL AUTH ERROR - Check EMAIL_PASS (use App Password, not regular password)', {
-    //                     emailUser: process.env.EMAIL_USER.substring(0, 5) + '***'
-    //                 });
-    //             }
-    //         } else {
-    //             log('INFO', 'Email sent successfully (async)', {
-    //                 to: options.email,
-    //                 messageId: info.messageId,
-    //                 response: info.response
-    //             });
-    //         }
-    //     }
-    // );
-
-    // // Return immediately - don't wait for email
-    // return Promise.resolve(null);
 };
 
 // Blocking email - waits for response
