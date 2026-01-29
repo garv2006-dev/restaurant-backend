@@ -168,7 +168,7 @@ UserSchema.methods.getResetPasswordToken = function () {
     .digest("hex");
 
   // Set expire
-  this.resetPasswordExpire = Date.now() + 10 * 60 * 1000; // 10 minutes
+  this.resetPasswordExpire = Date.now() + 3 * 60 * 1000; // 3 minutes
 
   return resetToken;
 };
@@ -199,7 +199,7 @@ UserSchema.methods.getRegistrationOtp = function () {
     .digest("hex");
 
   // Set expire (24 hours)
-  this.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000;
+  this.emailVerificationExpire = Date.now() + 3 * 60 * 1000; // 3 minutes
 
   return otp;
 };
