@@ -29,7 +29,7 @@ const register = async (req, res, next) => {
                 
                 Your verification code is: ${otp}
                 
-                This code will expire in 24 hours.
+                This code will expire in 3 minutes.
                 `;
 
                 const htmlMessage = `
@@ -40,7 +40,7 @@ const register = async (req, res, next) => {
                     <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
                         <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
                     </div>
-                    <p style="font-size: 16px; color: #555;">This code will expire in 24 hours.</p>
+                    <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
                 </div>
                 `;
 
@@ -102,7 +102,7 @@ const register = async (req, res, next) => {
         
         Your verification code is: ${otp}
         
-        This code will expire in 24 hours.
+        This code will expire in 3 minutes.
         `;
 
         const htmlMessage = `
@@ -113,7 +113,7 @@ const register = async (req, res, next) => {
             <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
                 <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
             </div>
-            <p style="font-size: 16px; color: #555;">This code will expire in 24 hours.</p>
+            <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
         </div>
         `;
 
@@ -420,7 +420,7 @@ You are receiving this email because you requested to reset your password.
 
 Your verification code is: ${resetToken}
 
-This code will expire in 10 minutes.
+This code will expire in 3 minutes.
 
 If you did not request this, please ignore this email.
         `;
@@ -436,7 +436,7 @@ If you did not request this, please ignore this email.
             <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
                 <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${resetToken}</span>
             </div>
-            <p style="font-size: 16px; color: #555;">This code will expire in 10 minutes.</p>
+            <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
             <p style="font-size: 14px; color: #888; margin-top: 30px;">If you didn't request a password reset, you can safely ignore this email.</p>
         </div>
         `;
@@ -722,7 +722,7 @@ const resendVerification = async (req, res, next) => {
         const message = `
         Your new verification code is: ${otp}
         
-        This code will expire in 24 hours.
+        This code will expire in 3 minutes.
         `;
 
         const htmlMessage = `
@@ -733,7 +733,7 @@ const resendVerification = async (req, res, next) => {
             <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
                 <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
             </div>
-            <p style="font-size: 16px; color: #555;">This code will expire in 24 hours.</p>
+            <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
         </div>
         `;
 
