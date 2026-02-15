@@ -114,6 +114,19 @@ const getRooms = async (req, res) => {
                 isActive: true
             });
 
+            // Check if any room numbers are available (not in maintenance or out of service)
+            const availableRoomNumbers = await RoomNumber.countDocuments({
+                roomType: room._id,
+                status: { $nin: ['Maintenance', 'Out of Service'] },
+                isActive: true
+            });
+
+            // Set hasAvailableRooms flag - true if at least one room is not in maintenance
+            roomObj.hasAvailableRooms = availableRoomNumbers > 0;
+
+            // Calculate maintenance count
+            roomObj.maintenanceCount = roomObj.totalRoomNumbers - availableRoomNumbers;
+
             return roomObj;
         }));
 
