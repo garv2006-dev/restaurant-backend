@@ -234,17 +234,22 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
                 bookingStatus = booking.status;
         }
 
+
         // Check if notification already exists BEFORE creating
+        // Check by both bookingStatus AND title to prevent race conditions
         const existingNotification = await Notification.findOne({
             userId,
             type: 'room_booking',
             relatedRoomBookingId: booking._id,
-            bookingStatus
+            $or: [
+                { bookingStatus },
+                { title }
+            ]
         }).maxTimeMS(3000).lean();
 
         // Only create and emit if notification doesn't exist
         if (existingNotification) {
-            console.log(`Notification already exists for booking ${booking.bookingId} with status ${bookingStatus}, skipping creation and socket emit`);
+            console.log(`Notification already exists for booking ${booking.bookingId} with status ${bookingStatus} or title "${title}", skipping creation and socket emit`);
             return existingNotification;
         }
 
@@ -285,68 +290,68 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
 
 // @desc    Create payment notification (internal use)
 // @access  Private/Admin (for internal calls)
-const createPaymentNotification = async (userId, bookingData, paymentStatus) => {
-    try {
-        const { booking, room } = bookingData;
+// const createPaymentNotification = async (userId, bookingData, paymentStatus) => {
+//     try {
+//         const { booking, room } = bookingData;
 
-        let title, message;
+//         let title, message;
 
-        if (paymentStatus === 'completed' || paymentStatus === 'Paid') {
-            title = 'Payment Successful';
-            message = `Payment of ₹${booking.pricing.totalAmount.toFixed(2)} for booking ${booking.bookingId} has been successfully processed.`;
-        } else if (paymentStatus === 'failed' || paymentStatus === 'Failed') {
-            title = 'Payment Failed';
-            message = `Payment for booking ${booking.bookingId} has failed. Please try again or contact support.${booking.pricing.totalAmount ? ` Amount: ₹${booking.pricing.totalAmount.toFixed(2)}` : ''}`;
-        } else {
-            title = 'Payment Update';
-            message = `There is an update regarding payment for your booking ${booking.bookingId}.`;
-        }
+//         if (paymentStatus === 'completed' || paymentStatus === 'Paid') {
+//             title = 'Payment Successful';
+//             message = `Payment of ₹${booking.pricing.totalAmount.toFixed(2)} for booking ${booking.bookingId} has been successfully processed.`;
+//         } else if (paymentStatus === 'failed' || paymentStatus === 'Failed') {
+//             title = 'Payment Failed';
+//             message = `Payment for booking ${booking.bookingId} has failed. Please try again or contact support.${booking.pricing.totalAmount ? ` Amount: ₹${booking.pricing.totalAmount.toFixed(2)}` : ''}`;
+//         } else {
+//             title = 'Payment Update';
+//             message = `There is an update regarding payment for your booking ${booking.bookingId}.`;
+//         }
 
-        // Check if notification already exists BEFORE creating
-        const existingNotification = await Notification.findOne({
-            userId,
-            type: 'payment',
-            relatedRoomBookingId: booking._id,
-            title
-        }).maxTimeMS(3000).lean();
+//         // Check if notification already exists BEFORE creating
+//         const existingNotification = await Notification.findOne({
+//             userId,
+//             type: 'payment',
+//             relatedRoomBookingId: booking._id,
+//             title
+//         }).maxTimeMS(3000).lean();
 
-        // Only create and emit if notification doesn't exist
-        if (existingNotification) {
-            console.log(`Payment notification already exists for booking ${booking.bookingId}, skipping creation and socket emit`);
-            return existingNotification;
-        }
+//         // Only create and emit if notification doesn't exist
+//         if (existingNotification) {
+//             console.log(`Payment notification already exists for booking ${booking.bookingId}, skipping creation and socket emit`);
+//             return existingNotification;
+//         }
 
-        // Create new notification
-        const notification = await Notification.create({
-            userId,
-            title,
-            message,
-            type: 'payment',
-            relatedRoomBookingId: booking._id,
-            roomId: room._id
-        });
+//         // Create new notification
+//         const notification = await Notification.create({
+//             userId,
+//             title,
+//             message,
+//             type: 'payment',
+//             relatedRoomBookingId: booking._id,
+//             roomId: room._id
+//         });
 
-        // Emit real-time notification for NEW notification
-        try {
-            emitUserNotification(userId, {
-                title,
-                message,
-                type: 'payment',
-                bookingId: booking.bookingId,
-                notificationId: notification._id,
-                createdAt: notification.createdAt
-            });
-            console.log(`NEW payment notification created and emitted for user ${userId}`);
-        } catch (socketError) {
-            console.error('Socket notification error:', socketError);
-        }
+//         // Emit real-time notification for NEW notification
+//         try {
+//             emitUserNotification(userId, {
+//                 title,
+//                 message,
+//                 type: 'payment',
+//                 bookingId: booking.bookingId,
+//                 notificationId: notification._id,
+//                 createdAt: notification.createdAt
+//             });
+//             console.log(`NEW payment notification created and emitted for user ${userId}`);
+//         } catch (socketError) {
+//             console.error('Socket notification error:', socketError);
+//         }
 
-        return notification;
-    } catch (error) {
-        console.error('Create payment notification error:', error);
-        throw error;
-    }
-};
+//         return notification;
+//     } catch (error) {
+//         console.error('Create payment notification error:', error);
+//         throw error;
+//     }
+// };
 
 // @desc    Create promotion notification (Admin only)
 // @route   POST /api/notifications/promotion
@@ -526,7 +531,7 @@ module.exports = {
     deleteNotification,
     clearAllNotifications,
     createRoomBookingNotification,
-    createPaymentNotification,
+    // createPaymentNotification, // Disabled
     createPromotionNotification,
     createSystemNotification
 };

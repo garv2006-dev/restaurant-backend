@@ -13,7 +13,7 @@ const {
   emitUserNotification,
   getSocketIo
 } = require("../config/socket");
-const { createRoomBookingNotification, createPaymentNotification } = require("./notificationController");
+const { createRoomBookingNotification } = require("./notificationController");
 
 // @desc    Validate discount code for booking
 // @route   POST /api/bookings/validate-discount
@@ -607,22 +607,22 @@ const createBooking = async (req, res) => {
       booking.paymentDetails.paymentId = payment._id;
       await booking.save();
 
-      // Create payment notification
-      try {
-        await createPaymentNotification(
-          req.user.id,
-          {
-            payment,
-            booking,
-            amount: totalAmount,
-            method: normalizedPaymentMethod,
-            room
-          },
-          'payment_completed'
-        );
-      } catch (notifError) {
-        console.error("Payment notification error:", notifError);
-      }
+      // Payment notification disabled
+      // try {
+      //   await createPaymentNotification(
+      //     req.user.id,
+      //     {
+      //       payment,
+      //       booking,
+      //       amount: totalAmount,
+      //       method: normalizedPaymentMethod,
+      //       room
+      //     },
+      //     'payment_completed'
+      //   );
+      // } catch (notifError) {
+      //   console.error("Payment notification error:", notifError);
+      // }
     } catch (paymentError) {
       console.error("Payment creation error:", paymentError);
       console.error("Payment error details:", paymentError.message);
@@ -1082,20 +1082,30 @@ const cancelBooking = async (req, res) => {
     try {
       const room = await Room.findById(booking.room);
       if (room && typeof createRoomBookingNotification === 'function') {
+        // Track which users have been notified to prevent duplicates
+        const bookingOwnerId = booking.user.toString();
+        const notifiedUserIds = new Set();
+
         // 1. Notify the booking owner (User)
         await createRoomBookingNotification(
-          booking.user.toString(),
+          bookingOwnerId,
           { booking, room, status: 'Cancelled' },
           req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
         );
+        notifiedUserIds.add(bookingOwnerId);
 
-        // 2. If User cancelled, also notify ALL Admins
+        // 2. If User cancelled, also notify ALL Admins (but skip if already notified)
         if (req.user.role !== 'admin') {
           const admins = await User.find({ role: 'admin' });
           if (admins && admins.length > 0) {
             for (const admin of admins) {
-              // Skip if admin is the same as the booking user
-              if (admin._id.toString() === booking.user.toString()) continue;
+              const adminId = admin._id.toString();
+
+              // Skip if this admin has already been notified (e.g., they are the booking owner)
+              if (notifiedUserIds.has(adminId)) {
+                console.log(`Skipping duplicate notification for admin ${adminId} (already notified as booking owner)`);
+                continue;
+              }
 
               try {
                 await createRoomBookingNotification(
@@ -1103,6 +1113,7 @@ const cancelBooking = async (req, res) => {
                   { booking, room, status: 'Cancelled' },
                   'cancelled_by_user'
                 );
+                notifiedUserIds.add(adminId);
               } catch (err) { console.error(`Failed to notify admin ${admin._id}`, err); }
             }
           }
