@@ -5,6 +5,14 @@ const Payment = require('../models/Payment');
 const Review = require('../models/Review');
 const RoomAllocation = require('../models/RoomAllocation');
 const RoomNumber = require('../models/RoomNumber');
+const sendEmail = require('../utils/sendEmail');
+const {
+    generateBookingConfirmationEmail,
+    generateCancellationEmail,
+    generateCheckInEmail,
+    generateCheckOutEmail,
+    generateNoShowEmail
+} = require('../utils/emailTemplates');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -209,7 +217,6 @@ const getAllBookings = async (req, res) => {
 const updateBookingStatus = async (req, res) => {
     try {
         const { status } = req.body;
-        const sendEmail = require('../utils/sendEmail');
 
         const booking = await Booking.findById(req.params.id)
             .populate('user', 'name email')
@@ -303,151 +310,32 @@ const updateBookingStatus = async (req, res) => {
 
             if (status === 'Confirmed' && oldStatus === 'Pending') {
                 emailSubject = `Booking Confirmed - ${booking.bookingId}`;
-                emailMessage = `
-                    <p>Dear ${guestName},</p>
-                    
-                    <p>Great news! Your booking has been <strong>confirmed</strong>.</p>
-                    
-                    <h4 style="color: #28a745; margin-top: 20px;">Booking Details:</h4>
-                    <ul style="list-style: none; padding-left: 0;">
-                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
-                        <li><strong>Room:</strong> ${roomName}</li>
-                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
-                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
-                        <li><strong>Number of Nights:</strong> ${booking.bookingDates.nights}</li>
-                        <li><strong>Total Amount:</strong> ₹${booking.pricing.totalAmount.toFixed(2)}</li>
-                    </ul>
-                    
-                    <p style="background-color: #e7f3ff; padding: 15px; border-left: 4px solid #2196F3; margin: 20px 0;">
-                        <strong style="color: #0c5460;">✓ The room is available for your dates.</strong> 
-                        You can proceed with your booking. Our team will be ready to welcome you!
-                    </p>
-                    
-                    <p>If you have any questions or special requests, please don't hesitate to contact us.</p>
-                    
-                    <p style="margin-top: 30px; color: #666;">
-                        Best regards,<br>
-                        <strong>Luxury Hotel & Rooms Team</strong>
-                    </p>
-                `;
+                emailMessage = `Your booking ${booking.bookingId} has been confirmed.`;
+                htmlHtml = generateBookingConfirmationEmail(booking);
             } else if (status === 'Cancelled') {
                 emailSubject = `Booking Cancelled - ${booking.bookingId}`;
-                emailMessage = `
-                    <p>Dear ${guestName},</p>
-                    
-                    <p>We regret to inform you that your booking has been cancelled.</p>
-                    
-                    <h4 style="color: #dc3545; margin-top: 20px;">Booking Details:</h4>
-                    <ul style="list-style: none; padding-left: 0;">
-                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
-                        <li><strong>Room:</strong> ${roomName}</li>
-                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
-                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
-                    </ul>
-                    
-                    <p style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;">
-                        <strong style="color: #721c24;">✗ Your booking has been cancelled.</strong> 
-                        We apologize for any inconvenience caused.
-                    </p>
-                    
-                    <p>If you have any questions or would like to make a new booking, please contact us.</p>
-                    
-                    <p style="margin-top: 30px; color: #666;">
-                        Best regards,<br>
-                        <strong>Luxury Hotel & Rooms Team</strong>
-                    </p>
-                `;
-            } else if (status === 'CheckedIn' && oldStatus === 'Confirmed') {
+                emailMessage = `Your booking ${booking.bookingId} has been cancelled.`;
+                htmlHtml = generateCancellationEmail(booking);
+            } else if (status === 'CheckedIn') {
                 emailSubject = `Welcome! Check-in Confirmed - ${booking.bookingId}`;
-                emailMessage = `
-                    <p>Dear ${guestName},</p>
-                    
-                    <p>Welcome to our hotel! You have been successfully checked in.</p>
-                    
-                    <h4 style="color: #17a2b8; margin-top: 20px;">Check-in Details:</h4>
-                    <ul style="list-style: none; padding-left: 0;">
-                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
-                        <li><strong>Room:</strong> ${roomName}</li>
-                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
-                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
-                    </ul>
-                    
-                    <p style="background-color: #d1ecf1; padding: 15px; border-left: 4px solid #17a2b8; margin: 20px 0;">
-                        <strong style="color: #0c5460;">✓ You are now checked in!</strong> 
-                        Enjoy your stay with us. If you need anything, please don't hesitate to contact our front desk.
-                    </p>
-                    
-                    <p>We hope you have a wonderful stay!</p>
-                    
-                    <p style="margin-top: 30px; color: #666;">
-                        Best regards,<br>
-                        <strong>Luxury Hotel & Rooms Team</strong>
-                    </p>
-                `;
-            } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
+                emailMessage = `You are now checked in for booking ${booking.bookingId}.`;
+                htmlHtml = generateCheckInEmail(booking);
+            } else if (status === 'CheckedOut') {
                 emailSubject = `Thank You! Check-out Completed - ${booking.bookingId}`;
-                emailMessage = `
-                    <p>Dear ${guestName},</p>
-                    
-                    <p>Thank you for staying with us! You have been successfully checked out.</p>
-                    
-                    <h4 style="color: #6c757d; margin-top: 20px;">Check-out Details:</h4>
-                    <ul style="list-style: none; padding-left: 0;">
-                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
-                        <li><strong>Room:</strong> ${roomName}</li>
-                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
-                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
-                    </ul>
-                    
-                    <p style="background-color: #f8f9fa; padding: 15px; border-left: 4px solid #6c757d; margin: 20px 0;">
-                        <strong style="color: #495057;">✓ Check-out completed successfully!</strong> 
-                        We hope you enjoyed your stay with us.
-                    </p>
-                    
-                    <p>We would love to hear about your experience. Please consider leaving us a review!</p>
-                    
-                    <p>We look forward to welcoming you back soon.</p>
-                    
-                    <p style="margin-top: 30px; color: #666;">
-                        Best regards,<br>
-                        <strong>Luxury Hotel & Rooms Team</strong>
-                    </p>
-                `;
+                emailMessage = `You have been checked out for booking ${booking.bookingId}.`;
+                htmlHtml = generateCheckOutEmail(booking);
             } else if (status === 'NoShow') {
                 emailSubject = `No Show - ${booking.bookingId}`;
-                emailMessage = `
-                    <p>Dear ${guestName},</p>
-                    
-                    <p>We noticed that you did not arrive for your scheduled check-in.</p>
-                    
-                    <h4 style="color: #dc3545; margin-top: 20px;">Booking Details:</h4>
-                    <ul style="list-style: none; padding-left: 0;">
-                        <li><strong>Booking ID:</strong> ${booking.bookingId}</li>
-                        <li><strong>Room:</strong> ${roomName}</li>
-                        <li><strong>Check-in Date:</strong> ${checkInDate}</li>
-                        <li><strong>Check-out Date:</strong> ${checkOutDate}</li>
-                    </ul>
-                    
-                    <p style="background-color: #f8d7da; padding: 15px; border-left: 4px solid #dc3545; margin: 20px 0;">
-                        <strong style="color: #721c24;">Your booking has been marked as No Show.</strong> 
-                        If this was due to unforeseen circumstances, please contact us.
-                    </p>
-                    
-                    <p>If you still plan to arrive, please contact us immediately to check availability.</p>
-                    
-                    <p style="margin-top: 30px; color: #666;">
-                        Best regards,<br>
-                        <strong>Luxury Hotel & Rooms Team</strong>
-                    </p>
-                `;
+                emailMessage = `Your booking ${booking.bookingId} has been marked as No-Show.`;
+                htmlHtml = generateNoShowEmail(booking);
             }
 
-            // Send email if there's a message to send
-            if (emailMessage && guestEmail) {
+            if (htmlHtml && guestEmail) {
                 await sendEmail({
                     email: guestEmail,
                     subject: emailSubject,
-                    message: emailMessage
+                    message: emailMessage,
+                    html: htmlHtml
                 });
             }
         } catch (emailError) {

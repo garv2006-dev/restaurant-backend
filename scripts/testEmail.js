@@ -49,85 +49,31 @@ async function testEmailSetup() {
   }
 
   // Send test email
-  console.log('📧 Sending test email...');
+  const { generateBookingConfirmationEmail } = require('../utils/emailTemplates');
+
+  const mockBooking = {
+    bookingId: 'BKMLBVWJRRZA7SE',
+    guestDetails: {
+      primaryGuest: { name: 'Garv variya' },
+      totalAdults: 1,
+      totalChildren: 0
+    },
+    room: { name: 'Royal Executive Suite' },
+    bookingDates: {
+      checkInDate: new Date(),
+      checkOutDate: new Date(Date.now() + 86400000)
+    },
+    pricing: {
+      totalAmount: 9204.00
+    }
+  };
+
+  console.log('📧 Sending test email using new "Booking Confirmed" template...');
   const testEmail = {
     from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
     to: 'garvvariya03@gmail.com',
-    subject: '✅ Test Email - Contact Form Setup Successful',
-    html: `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-          }
-          .container {
-            max-width: 600px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f9f9f9;
-          }
-          .header {
-            background-color: #4CAF50;
-            color: white;
-            padding: 20px;
-            text-align: center;
-            border-radius: 5px 5px 0 0;
-          }
-          .content {
-            background-color: white;
-            padding: 30px;
-            border-radius: 0 0 5px 5px;
-          }
-          .success-icon {
-            font-size: 48px;
-            text-align: center;
-            margin: 20px 0;
-          }
-          .info-box {
-            background-color: #f5f5f5;
-            padding: 15px;
-            border-left: 4px solid #4CAF50;
-            margin: 20px 0;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>🎉 Email Setup Successful!</h2>
-          </div>
-          <div class="content">
-            <div class="success-icon">✅</div>
-            
-            <p>Congratulations! Your email configuration is working correctly.</p>
-            
-            <div class="info-box">
-              <strong>Configuration Details:</strong><br>
-              <strong>Service:</strong> ${process.env.EMAIL_SERVICE || 'gmail'}<br>
-              <strong>From:</strong> ${process.env.EMAIL_USER}<br>
-              <strong>Test Time:</strong> ${new Date().toLocaleString()}
-            </div>
-            
-            <p>Your contact form is now ready to receive and send emails!</p>
-            
-            <p><strong>What happens next:</strong></p>
-            <ul>
-              <li>Users can submit the contact form on your website</li>
-              <li>You'll receive notifications at: garvvariya03@gmail.com</li>
-              <li>Users will receive automatic confirmation emails</li>
-            </ul>
-            
-            <p>Best regards,<br>
-            <strong>Luxury Hotel System</strong></p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `
+    subject: '🏨 Booking Confirmed - Premium Email Test',
+    html: generateBookingConfirmationEmail(mockBooking)
   };
 
   try {

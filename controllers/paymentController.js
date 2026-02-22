@@ -2,6 +2,7 @@ const Payment = require('../models/Payment');
 const Booking = require('../models/Booking');
 const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
+const { generatePaymentConfirmationEmail } = require('../utils/emailTemplates');
 
 // @desc    Create payment intent (Stripe/Razorpay)
 // @route   POST /api/payments/create-intent
@@ -181,29 +182,14 @@ const confirmPayment = async (req, res) => {
         booking.paymentDetails = paymentDetails;
         await booking.save();
 
-        // Send confirmation email
         try {
-            const emailMessage = `
-                Dear ${booking.guestDetails.primaryGuest.name},
-                
-                Your payment has been successfully processed!
-                
-                Payment Details:
-                - Booking ID: ${booking.bookingId}
-                - Amount: $${amount.toFixed(2)}
-                - Transaction ID: ${paymentDetails.transactionId}
-                - Payment Date: ${paymentDetails.paymentDate.toDateString()}
-                
-                Your booking is now confirmed. We look forward to hosting you!
-                
-                Best regards,
-                Hotel Booking Team
-            `;
+            const htmlMessage = generatePaymentConfirmationEmail(booking, paymentDetails);
 
             await sendEmail({
                 email: booking.guestDetails.primaryGuest.email,
                 subject: `Payment Confirmation - ${booking.bookingId}`,
-                message: emailMessage
+                message: `Dear ${booking.guestDetails.primaryGuest.name}, Your payment of ₹${amount} for booking ${booking.bookingId} has been confirmed.`,
+                html: htmlMessage
             });
         } catch (emailError) {
             console.error('Email sending error:', emailError);

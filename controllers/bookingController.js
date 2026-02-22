@@ -6,7 +6,13 @@ const User = require("../models/User");
 const sendEmail = require("../utils/sendEmail");
 const Payment = require("../models/Payment");
 const Discount = require("../models/Discount");
-const { generateBookingConfirmationEmail, generateCancellationEmail, generateBookingReceivedEmail } = require("../utils/emailTemplates");
+const {
+  generateBookingConfirmationEmail,
+  generateCancellationEmail,
+  generateBookingReceivedEmail,
+  generateCheckInEmail,
+  generateCheckOutEmail
+} = require("../utils/emailTemplates");
 const {
   emitNewBooking,
   emitBookingStatusChange,
@@ -1283,7 +1289,6 @@ const checkInBooking = async (req, res) => {
 
     // Send check-in confirmation email
     try {
-      const { generateCheckInEmail } = require("../utils/emailTemplates");
       const htmlMessage = generateCheckInEmail(booking, booking.checkInDetails);
 
       const plainTextMessage = `
@@ -1399,7 +1404,6 @@ const checkOutBooking = async (req, res) => {
 
     // Send check-out confirmation email
     try {
-      const { generateCheckOutEmail } = require("../utils/emailTemplates");
       const htmlMessage = generateCheckOutEmail(booking, booking.checkOutDetails);
 
       const additionalChargesText = additionalCharges && additionalCharges.length > 0

@@ -1,145 +1,188 @@
 // =======================================
-// Luxury Hotel – Standardized Email Templates
-// Responsive, Styled, Hotel-Bill Theme
+// Luxury Hotel – Modern & Professional Email Templates
+// Based on Premium Hotel Design Aesthetics
 // =======================================
 
 /**
  * Master Email Layout
- * Generates a consistent HTML structure for all emails.
+ * Generates a consistent, premium HTML structure for all emails.
  */
+const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
 const masterEmailLayout = ({
   title,
-  themeColor,
+  themeColor = 'dark', // 'dark', 'success', 'danger', 'info'
   customerName,
   introMessage,
-  statusBadge, // { text: 'Confirmed', color: '#...' }
+  headerIcon = null, // SVG or icon URL
+  statusBadge = null, // { text: 'Confirmed', bg: '#...', color: '#...' }
   bookingDetails = [], // Array of { label, value }
   pricingDetails = null, // { items: [{label, value}], total: number }
+  actionButton = null, // { text, url }
   messageBody = '',
-  footerMessage = ''
+  footerLinks = []
 }) => {
-  // Theme Helpers
   const colors = {
-    orange: '#f59e0b',
-    blue: '#2563eb',
-    teal: '#0d9488',
-    gray: '#4b5563',
-    red: '#dc2626',
-    white: '#ffffff',
-    bg: '#f3f4f6'
+    dark: '#111827',
+    success: '#10b981',
+    danger: '#ef4444',
+    info: '#3b82f6',
+    border: '#e5e7eb',
+    bg: '#f9fafb',
+    text: '#374151',
+    muted: '#6b7280'
   };
 
-  const primaryColor = colors[themeColor] || colors.blue;
+  const primaryColor = colors[themeColor] || colors.dark;
 
-  // Generate Details Rows
-  const detailsRows = bookingDetails.map(item => `
-    <tr>
-      <td style="padding: 8px 0; color: #6b7280; font-size: 14px; width: 40%;">${item.label}</td>
-      <td style="padding: 8px 0; color: #111827; font-size: 14px; font-weight: 600; text-align: right;">${item.value}</td>
-    </tr>
-  `).join('');
+  // Icons based on theme
+  const icons = {
+    booking: `
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color: #111827;">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="3" y1="9" x2="21" y2="9"></line>
+        <line x1="9" y1="21" x2="9" y2="9"></line>
+      </svg>`,
+    success: `
+      <div style="width: 48px; height: 48px; background-color: #ecfeff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0d9488" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="20 6 9 17 4 12"></polyline>
+        </svg>
+      </div>`,
+    cancel: `
+      <div style="width: 48px; height: 48px; background-color: #fef2f2; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </div>`
+  };
 
-  // Generate Pricing Rows
+  const selectedIcon = headerIcon || icons.booking;
+
+  const detailsRows = bookingDetails.length > 0 ? `
+    <div style="margin-top: 32px; border-top: 1px solid ${colors.border}; padding-top: 32px;">
+      <h3 style="margin: 0 0 16px 0; font-size: 11px; color: ${colors.muted}; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700;">Booking Details</h3>
+      <table width="100%" cellpadding="0" cellspacing="0">
+        ${bookingDetails.map(item => `
+          <tr>
+            <td style="padding: 12px 0; color: ${colors.muted}; font-size: 14px; width: 45%;">${item.label}</td>
+            <td style="padding: 12px 0; color: ${colors.dark}; font-size: 14px; font-weight: 600; text-align: right;">${item.value}</td>
+          </tr>
+        `).join('')}
+      </table>
+    </div>
+  ` : '';
+
   let pricingSection = '';
   if (pricingDetails) {
-    const pricingRows = pricingDetails.items.map(item => `
-      <tr>
-        <td style="padding: 6px 0; color: #6b7280; font-size: 14px;">${item.label}</td>
-        <td style="padding: 6px 0; color: #111827; font-size: 14px; text-align: right;">${item.value}</td>
-      </tr>
-    `).join('');
-
     pricingSection = `
-      <div style="margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb;">
+      <div style="margin-top: 8px; border-top: 1px dashed ${colors.border}; padding-top: 24px;">
         <table width="100%" cellpadding="0" cellspacing="0">
-          ${pricingRows}
           <tr>
-            <td style="padding-top: 12px; font-size: 16px; font-weight: bold; color: #111827;">Total Amount</td>
-            <td style="padding-top: 12px; font-size: 16px; font-weight: bold; color: ${primaryColor}; text-align: right;">${pricingDetails.total}</td>
+            <td style="font-size: 16px; font-weight: 700; color: ${colors.dark};">Total Amount</td>
+            <td style="font-size: 18px; font-weight: 800; color: ${colors.dark}; text-align: right;">₹${pricingDetails.total}</td>
           </tr>
         </table>
       </div>
     `;
   }
 
+  const buttonHtml = actionButton ? `
+    <div style="text-align: center; margin-top: 40px;">
+      <a href="${actionButton.url}" style="background-color: #111827; color: #ffffff; padding: 14px 32px; border-radius: 4px; text-decoration: none; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; display: inline-block;">
+        ${actionButton.text}
+      </a>
+    </div>
+  ` : '';
+
   return `
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${title}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  </style>
 </head>
-<body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-  
-  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color: #f3f4f6; padding: 20px 0;">
+<body style="margin: 0; padding: 0; background-color: #f3f4f6; -webkit-font-smoothing: antialiased;">
+  <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="background-color: #f3f4f6; padding: 40px 0;">
     <tr>
       <td align="center">
-        
-        <!-- Main Container -->
-        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width: 600px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-          
+        <!-- Main Wrapper -->
+        <table width="100%" cellpadding="0" cellspacing="0" role="presentation" style="max-width: 600px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
           <!-- Header -->
           <tr>
-            <td style="background-color: ${primaryColor}; padding: 30px 20px; text-align: center;">
-              <h1 style="margin: 0; font-size: 24px; color: #ffffff; letter-spacing: 0.5px; text-transform: uppercase;">${title}</h1>
-              <p style="margin: 5px 0 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Luxury Hotel & Rooms</p>
+            <td style="padding: 48px 40px 0 40px; text-align: center;">
+              <div style="margin-bottom: 24px;">
+                ${selectedIcon}
+              </div>
+              <p style="margin: 0; color: ${colors.muted}; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;">Luxury Hotel & Rooms</p>
+              <h1 style="margin: 24px 0 8px 0; font-size: 28px; font-weight: 800; color: ${colors.dark}; letter-spacing: -0.5px;">${title}</h1>
+              <p style="margin: 0; color: ${colors.muted}; font-size: 15px; font-weight: 500;">Dear ${customerName},</p>
             </td>
           </tr>
 
-          <!-- Body Content -->
+          <!-- Content -->
           <tr>
-            <td style="padding: 32px 24px;">
-              
-              <!-- Greeting -->
-              <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151;">Dear <strong>${customerName}</strong>,</p>
-              
-              <!-- Intro -->
-              <p style="margin: 0 0 24px 0; font-size: 15px; color: #4b5563; line-height: 1.5;">${introMessage}</p>
+            <td style="padding: 32px 40px 48px 40px;">
+              <p style="margin: 0; font-size: 15px; color: ${colors.text}; line-height: 1.6; text-align: center;">
+                ${introMessage}
+              </p>
 
-              <!-- Status Badge -->
               ${statusBadge ? `
-              <div style="text-align: center; margin-bottom: 24px;">
-                <span style="background-color: ${statusBadge.bg}; color: ${statusBadge.text}; padding: 8px 16px; border-radius: 9999px; font-size: 14px; font-weight: 600; display: inline-block;">
-                  ${statusBadge.label}
+              <div style="text-align: center; margin-top: 24px;">
+                <span style="background-color: ${statusBadge.bg}; color: ${statusBadge.color}; padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;">
+                  ${statusBadge.text}
                 </span>
               </div>
               ` : ''}
 
-              <!-- Booking Details Card -->
-              <div style="background-color: #f9fafb; border-radius: 8px; padding: 20px; border: 1px solid #e5e7eb;">
-                <h3 style="margin: 0 0 16px 0; font-size: 14px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px; font-weight: 700;">Booking Details</h3>
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  ${detailsRows}
-                </table>
-                ${pricingSection}
-              </div>
-
-              <!-- Extra Message Body -->
-              ${messageBody ? `<div style="margin-top: 24px; font-size: 15px; color: #4b5563; line-height: 1.5;">${messageBody}</div>` : ''}
-
+              ${detailsRows}
+              ${pricingSection}
+              ${messageBody}
+              ${buttonHtml}
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="background-color: #f9fafb; padding: 24px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0 0 8px 0; font-size: 14px; color: #4b5563; font-weight: 600;">Luxury Hotel & Rooms</p>
-              <p style="margin: 0 0 8px 0; font-size: 13px; color: #6b7280;">123 Luxury Avenue, Paradise City</p>
-              <p style="margin: 0; font-size: 13px; color: #6b7280;">
-                <a href="mailto:support@luxuryhotel.com" style="color: ${primaryColor}; text-decoration: none;">support@luxuryhotel.com</a>
-                <span style="margin: 0 8px;">•</span>
-                <a href="#" style="color: ${primaryColor}; text-decoration: none;">+91 98765 43210</a>
+            <td style="background-color: #ffffff; padding: 40px; border-top: 1px solid #f3f4f6; text-align: center;">
+              <p style="margin: 0 0 16px 0; font-size: 12px; color: ${colors.muted};">
+                123 Luxury Avenue, Paradise City, PC 560001
+                <br>
+                +91 98765 43210
               </p>
-              <p style="margin: 16px 0 0 0; font-size: 12px; color: #9ca3af;">${footerMessage || 'Thank you for choosing us.'}</p>
+              <table align="center" style="margin: 0 auto;">
+                <tr>
+                  <td style="padding: 0 12px;">
+                    <a href="${baseUrl}/terms" style="color: ${colors.muted}; text-decoration: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Terms</a>
+                  </td>
+                  <td style="padding: 0 12px;">
+                    <a href="${baseUrl}/privacy" style="color: ${colors.muted}; text-decoration: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Privacy</a>
+                  </td>
+                  <td style="padding: 0 12px;">
+                    <a href="${baseUrl}/contact" style="color: ${colors.muted}; text-decoration: none; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px;">Support</a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 24px 0 0 0; font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: 1px;">
+                © 2024 LUXURY HOTEL & ROOMS. ALL RIGHTS RESERVED.
+              </p>
             </td>
           </tr>
-
         </table>
+        
+        <!-- Bottom Links -->
+        <p style="margin-top: 24px; text-align: center; color: ${colors.muted}; font-size: 11px;">
+          Having trouble viewing this email? <a href="${baseUrl}" style="color: ${colors.dark}; text-decoration: none; font-weight: 600;">View in Browser</a>
+        </p>
       </td>
     </tr>
   </table>
-
 </body>
 </html>
   `;
@@ -150,312 +193,270 @@ const masterEmailLayout = ({
 // ============================
 
 /**
- * Booking Received (Pending Confirmation) - Orange
+ * Booking Confirmed
  */
-const generateBookingReceivedEmail = (booking) => {
+const generateBookingConfirmationEmail = (booking) => {
+  const checkIn = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+  const checkOut = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+
   return masterEmailLayout({
-    title: 'Booking Received',
-    themeColor: 'orange',
+    title: 'Booking Confirmed',
     customerName: booking.guestDetails.primaryGuest.name,
-    introMessage: 'We have received your booking request. Our team is reviewing it now. You will receive a confirmation email once approved.',
-    statusBadge: { label: '⏳ Pending Confirmation', bg: '#fff7ed', text: '#c2410c' },
+    introMessage: 'Your reservation is now confirmed. We look forward to welcoming you to our hotel soon. Below are your booking details for your upcoming stay.',
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
-      { label: 'Room Type', value: booking.room.name || 'Standard Room' },
-      { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }) },
-      { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata' }) },
-      { label: 'Guests', value: `${booking.guestDetails.totalAdults} Adults, ${booking.guestDetails.totalChildren} Children` }
-    ]
+      { label: 'Room Type', value: booking.room.name || 'Executive Suite' },
+      { label: 'Check-in', value: `${checkIn} (14:00)` },
+      { label: 'Check-out', value: `${checkOut} (11:00)` }
+    ],
+    pricingDetails: { total: booking.pricing.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 }) },
+    actionButton: { text: 'Manage My Booking', url: `${baseUrl}/bookings` }
   });
 };
 
 /**
- * Booking Confirmed - Custom Alert Style
- */
-const generateBookingConfirmationEmail = (booking) => {
-  const totalAmount = booking.pricing.totalAmount.toFixed(2);
-
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Booking Confirmed</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333;">
-  
-  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    
-    <p style="margin-top: 20px; font-size: 14px; color: #000000;">Dear ${booking.guestDetails.primaryGuest.name},</p>
-    
-    <p style="margin-bottom: 30px; font-size: 14px; color: #000000;">
-      Great news! Your booking has been <strong>confirmed</strong>.
-    </p>
-
-    <!-- Green Header -->
-    <h3 style="color: #22c55e; font-size: 14px; margin-bottom: 20px; font-weight: bold;">Booking Details:</h3>
-
-    <div style="margin-bottom: 30px;">
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Booking ID:</strong> <span style="color: #333;">${booking.bookingId}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-       <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Number of Nights:</strong> <span style="color: #333;">${booking.bookingDates.nights}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Total Amount:</strong> <span style="color: #333;">₹${totalAmount}</span>
-      </p>
-    </div>
-
-    <!-- Blue Alert Box -->
-    <div style="background-color: #eff6ff; border-left: 4px solid #3b82f6; padding: 15px; margin-bottom: 30px;">
-      <p style="margin: 0; color: #1e40af; font-weight: bold; font-size: 14px;">
-        ✓ The room is available for your dates.
-      </p>
-      <p style="margin: 5px 0 0 0; color: #333333; font-size: 13px;">
-        You can proceed with your booking. Our team will be ready to welcome you!
-      </p>
-    </div>
-
-    <div style="margin-top: 40px; font-size: 13px; color: #666666;">
-      <p style="margin: 0; font-weight: bold;">Best regards,</p>
-      <p style="margin: 5px 0 0 0; font-weight: bold;">Luxury Hotel & Rooms Team</p>
-    </div>
-
-  </div>
-</body>
-</html>
-  `;
-};
-
-/**
- * Check-In Confirmed - Custom Alert Style
- */
-const generateCheckInEmail = (booking, checkInDetails = {}) => {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome! Check-in Confirmed</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333;">
-  
-  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    
-    <p style="margin-top: 20px; font-size: 14px; color: #000000;">Dear ${booking.guestDetails.primaryGuest.name},</p>
-    
-    <p style="margin-bottom: 30px; font-size: 14px; color: #000000;">
-      Welcome to our hotel! You have been successfully checked in.
-    </p>
-
-    <!-- Teal Header -->
-    <h3 style="color: #0d9488; font-size: 14px; margin-bottom: 20px; font-weight: bold;">Check-in Details:</h3>
-
-    <div style="margin-bottom: 30px;">
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Booking ID:</strong> <span style="color: #333;">${booking.bookingId}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-    </div>
-
-    <!-- Cyan Alert Box -->
-    <div style="background-color: #ecfeff; border-left: 4px solid #06b6d4; padding: 15px; margin-bottom: 30px;">
-      <p style="margin: 0; color: #0e7490; font-weight: bold; font-size: 14px;">
-        ✓ You are now checked in!
-      </p>
-      <p style="margin: 5px 0 0 0; color: #333333; font-size: 13px;">
-        Enjoy your stay with us. If you need anything, please don't hesitate to contact our front desk.
-      </p>
-    </div>
-
-    <p style="margin-top: 30px; font-size: 13px; color: #333333;">
-      We hope you have a wonderful stay!
-    </p>
-
-    <div style="margin-top: 40px; font-size: 13px; color: #666666;">
-      <p style="margin: 0; font-weight: bold;">Best regards,</p>
-      <p style="margin: 5px 0 0 0; font-weight: bold;">Luxury Hotel & Rooms Team</p>
-    </div>
-
-  </div>
-</body>
-</html>
-  `;
-};
-
-/**
- * Check-Out Completed - Custom Alert Style
- */
-const generateCheckOutEmail = (booking, checkOutDetails = {}) => {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Check-out Completed</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333;">
-  
-  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    
-    <p style="margin-top: 20px; font-size: 14px; color: #000000;">Dear ${booking.guestDetails.primaryGuest.name},</p>
-    
-    <p style="margin-bottom: 30px; font-size: 14px; color: #000000;">
-      Thank you for staying with us! You have been successfully checked out.
-    </p>
-
-    <!-- Gray Header -->
-    <h3 style="color: #4b5563; font-size: 14px; margin-bottom: 20px; font-weight: bold;">Check-out Details:</h3>
-
-    <div style="margin-bottom: 30px;">
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Booking ID:</strong> <span style="color: #333;">${booking.bookingId}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-    </div>
-
-    <!-- Gray Alert Box -->
-    <div style="background-color: #f9fafb; border-left: 4px solid #6b7280; padding: 15px; margin-bottom: 30px;">
-      <p style="margin: 0; color: #374151; font-weight: bold; font-size: 14px;">
-        ✓ Check-out completed successfully!
-      </p>
-      <p style="margin: 5px 0 0 0; color: #333333; font-size: 13px;">
-        We hope you enjoyed your stay with us.
-      </p>
-    </div>
-
-    <p style="margin-top: 30px; font-size: 13px; color: #333333;">
-      We would love to hear about your experience. Please consider leaving us a review!
-    </p>
-    
-    <p style="margin-top: 20px; font-size: 13px; color: #333333;">
-      We look forward to welcoming you back soon.
-    </p>
-
-    <div style="margin-top: 40px; font-size: 13px; color: #666666;">
-      <p style="margin: 0; font-weight: bold;">Best regards,</p>
-      <p style="margin: 5px 0 0 0; font-weight: bold;">Luxury Hotel & Rooms Team</p>
-    </div>
-
-  </div>
-</body>
-</html>
-  `;
-};
-
-/**
- * Cancellation - Red (Custom Layout)
+ * Booking Cancelled
  */
 const generateCancellationEmail = (booking, cancellationFee = 0, refundAmount = 0) => {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Booking Cancelled</title>
-</head>
-<body style="margin: 0; padding: 0; background-color: #ffffff; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #333333;">
-  
-  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-    
-    <!-- Greeting -->
-    <p style="margin-top: 20px; font-size: 14px; color: #000000;">Dear ${booking.guestDetails.primaryGuest.name},</p>
-    
-    <p style="margin-bottom: 30px; font-size: 14px; color: #000000;">We regret to inform you that your booking has been cancelled.</p>
+  const dates = `${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} — ${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
 
-    <!-- Red Header -->
-    <h3 style="color: #dc2626; font-size: 14px; margin-bottom: 20px; font-weight: bold;">Booking Details:</h3>
-
-    <!-- Details Grid -->
-    <div style="margin-bottom: 30px;">
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Booking ID:</strong> <span style="color: #333;">${booking.bookingId}</span>
+  return masterEmailLayout({
+    title: 'Booking Cancelled',
+    themeColor: 'danger',
+    headerIcon: `
+      <div style="width: 48px; height: 48px; border: 1px solid #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </div>`,
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: 'Your reservation at Luxury Hotel & Rooms has been successfully cancelled. We hope to welcome you back another time.',
+    messageBody: `
+      <p style="margin-top: 24px; font-size: 14px; text-align: left; color: #374151;">
+        As per your request, we have processed the cancellation for your upcoming stay. 
+        ${refundAmount > 0 ? `A refund of <strong>₹${refundAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong> has been initiated and will be credited to your original payment method within 5-7 business days.` : ''}
       </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Room:</strong> <span style="color: #333;">${booking.room.name || 'Room'}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-in Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-      <p style="margin: 8px 0; font-size: 14px;">
-        <strong>Check-out Date:</strong> <span style="color: #333;">${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'Asia/Kolkata' })}</span>
-      </p>
-    </div>
-
-    <!-- Red Alert Box -->
-    <div style="background-color: #fce8e8; border-left: 4px solid #dc2626; padding: 15px; margin-bottom: 30px;">
-      <p style="margin: 0; color: #7f1d1d; font-weight: bold; font-size: 14px;">
-        X Your booking has been cancelled.
-      </p>
-      <p style="margin: 5px 0 0 0; color: #333333; font-size: 13px;">
-        We apologize for any inconvenience caused.
-        ${refundAmount > 0 ? `<br>A refund of ₹${refundAmount.toFixed(2)} will be processed shortly.` : ''}
-      </p>
-    </div>
-
-    <!-- Footer -->
-    <p style="margin-top: 30px; font-size: 13px; color: #333333;">
-      If you have any questions or would like to make a new booking, please contact us.
-    </p>
-
-    <div style="margin-top: 40px; font-size: 13px; color: #666666;">
-      <p style="margin: 0; font-weight: bold;">Best regards,</p>
-      <p style="margin: 5px 0 0 0; font-weight: bold;">Luxury Hotel & Rooms Team</p>
-    </div>
-
-  </div>
-
-</body>
-</html>
-  `;
+    `,
+    bookingDetails: [
+      { label: 'Booking ID', value: booking.bookingId },
+      { label: 'Room Type', value: booking.room.name || 'Executive Room' },
+      { label: 'Dates', value: dates },
+      { label: 'Guest', value: `${booking.guestDetails.totalAdults} Adult` }
+    ],
+    actionButton: { text: 'Book a New Stay', url: `${baseUrl}/rooms` }
+  });
 };
 
 /**
- * Password Reset - Blue (Simplified)
+ * Check-In Confirmed
  */
+const generateCheckInEmail = (booking) => {
+  return masterEmailLayout({
+    title: 'You are now checked in!',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: 'Welcome! We are delighted to have you with us. Your room is ready for your arrival.',
+    statusBadge: { text: '✓ Check-in Confirmed', bg: '#ecfeff', color: '#0d9488' },
+    bookingDetails: [
+      { label: 'Booking Reference', value: booking.bookingId },
+      { label: 'Room Category', value: booking.room.name || 'Executive Suite' },
+      { label: 'Check-in Date', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) },
+      { label: 'Check-out Date', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+    ],
+    messageBody: `
+      <div style="margin-top: 32px; padding: 24px; background-color: #f9fafb; border-radius: 8px; text-align: center;">
+        <p style="margin: 0; font-style: italic; color: #4b5563; font-size: 14px;">
+          "Enjoy your stay with us. If you need anything, please don't hesitate to contact our front desk by dialing 0 from your room telephone."
+        </p>
+      </div>
+    `,
+    actionButton: { text: 'View My Booking', url: `${baseUrl}/bookings` }
+  });
+};
+
+/**
+ * Thank You / Check-Out
+ */
+const generateCheckOutEmail = (booking) => {
+  return masterEmailLayout({
+    title: 'Thank You!',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: 'Your check-out has been completed successfully. We hope your stay was as exceptional as we intended it to be.',
+    statusBadge: { text: '✓ Check-out confirmed successfully', bg: '#f0fdf4', color: '#16a34a' },
+    bookingDetails: [
+      { label: 'Booking ID', value: booking.bookingId },
+      { label: 'Room Type', value: booking.room.name || 'Executive Room' },
+      { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) },
+      { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+    ],
+    messageBody: `
+      <div style="margin-top: 32px; text-align: center;">
+        <p style="margin: 0 0 16px 0; color: #374151; font-weight: 600; font-size: 14px;">How would you rate your experience?</p>
+        <div style="margin-bottom: 24px;">
+          <span style="font-size: 24px; color: #e5e7eb; margin: 0 4px;">★</span>
+          <span style="font-size: 24px; color: #e5e7eb; margin: 0 4px;">★</span>
+          <span style="font-size: 24px; color: #e5e7eb; margin: 0 4px;">★</span>
+          <span style="font-size: 24px; color: #e5e7eb; margin: 0 4px;">★</span>
+          <span style="font-size: 24px; color: #e5e7eb; margin: 0 4px;">★</span>
+        </div>
+      </div>
+    `,
+    actionButton: { text: 'Leave a Review', url: `${baseUrl}/bookings` }
+  });
+};
+
+/**
+ * Booking Received (Pending)
+ */
+const generateBookingReceivedEmail = (booking) => {
+  return masterEmailLayout({
+    title: 'Booking Received',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: 'We have received your booking request. Our team is reviewing it now. You will receive a confirmation email once approved.',
+    statusBadge: { text: '⏳ Pending Confirmation', bg: '#fff7ed', color: '#c2410c' },
+    bookingDetails: [
+      { label: 'Booking ID', value: booking.bookingId },
+      { label: 'Room Type', value: booking.room.name || 'Standard Room' },
+      { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) },
+      { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+    ],
+    actionButton: { text: 'Check Status', url: `${baseUrl}/bookings` }
+  });
+};
+
+/**
+ * OTP / Verification
+ */
+const generateOTPEmail = (otp, customerName = 'Guest') => {
+  return masterEmailLayout({
+    title: 'Verification Code',
+    customerName: customerName,
+    introMessage: 'Please use the following one-time password (OTP) to verify your account or complete your request.',
+    headerIcon: `
+      <div style="width: 48px; height: 48px; background-color: #f3f4f6; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>`,
+    messageBody: `
+      <div style="margin-top: 32px; padding: 32px; background-color: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 8px; text-align: center;">
+        <h2 style="margin: 0; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #111827;">${otp}</h2>
+        <p style="margin: 16px 0 0 0; font-size: 13px; color: #6b7280;">This code will expire in 10 minutes.</p>
+      </div>
+    `
+  });
+};
+
 const generatePasswordResetEmail = (resetUrl) => {
   return masterEmailLayout({
-    title: 'Password Reset',
-    themeColor: 'blue',
-    customerName: 'User',
-    introMessage: 'We received a request to reset your password. Click the button below to proceed.',
-    bookingDetails: [], // No booking details
+    title: 'Reset Your Password',
+    customerName: 'Guest',
+    introMessage: 'We received a request to reset your password. If you didn\'t make this request, you can safely ignore this email.',
+    actionButton: { text: 'Reset Password', url: resetUrl },
     messageBody: `
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${resetUrl}" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold; font-size: 16px;">Reset Password</a>
-      </div>
-      <p style="font-size: 13px; color: #6b7280; text-align: center;">Link expires in 10 minutes. If you didn't request this, please ignore this email.</p>
+      <p style="margin-top: 24px; font-size: 13px; color: #6b7280; text-align: center;">
+        For security, this link will expire in 1 hour.
+      </p>
     `
+  });
+};
+
+/**
+ * Payment Confirmation
+ */
+const generatePaymentConfirmationEmail = (booking, paymentDetails) => {
+  return masterEmailLayout({
+    title: 'Payment Received',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: 'Thank you! Your payment has been successfully processed. Your reservation is now fully confirmed.',
+    statusBadge: { text: '✓ Payment Successful', bg: '#f0fdf4', color: '#16a34a' },
+    bookingDetails: [
+      { label: 'Booking ID', value: booking.bookingId },
+      { label: 'Amount Paid', value: `₹${paymentDetails.paidAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` },
+      { label: 'Transaction ID', value: paymentDetails.transactionId },
+      { label: 'Payment Date', value: new Date(paymentDetails.paymentDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+    ],
+    actionButton: { text: 'View Booking', url: `${baseUrl}/bookings` }
+  });
+};
+
+/**
+ * Contact Form Notification (Admin)
+ */
+const generateContactFormEmail = (contactData) => {
+  return masterEmailLayout({
+    title: 'New Contact Request',
+    customerName: 'Admin',
+    introMessage: 'A new message has been submitted via the contact form on your website.',
+    headerIcon: `
+      <div style="width: 48px; height: 48px; background-color: #fefce8; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ca8a04" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </div>`,
+    bookingDetails: [
+      { label: 'Name', value: contactData.name },
+      { label: 'Email', value: contactData.email },
+      { label: 'Phone', value: contactData.phone },
+      { label: 'Subject', value: contactData.subject }
+    ],
+    messageBody: `
+      <div style="margin-top: 32px; padding: 24px; background-color: #f9fafb; border-radius: 8px;">
+        <h4 style="margin: 0 0 12px 0; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px;">Message</h4>
+        <p style="margin: 0; font-size: 14px; color: #374151; line-height: 1.6;">${contactData.message}</p>
+      </div>
+    `,
+    actionButton: { text: 'Reply via Email', url: `mailto:${contactData.email}` }
+  });
+};
+
+/**
+ * Contact Form Confirmation (User)
+ */
+const generateContactConfirmationEmail = (name, subject, message) => {
+  return masterEmailLayout({
+    title: 'Message Received',
+    customerName: name,
+    introMessage: 'Thank you for reaching out to Luxury Hotel. We have received your message and will get back to you within 24 hours.',
+    headerIcon: `
+      <div style="width: 48px; height: 48px; background-color: #ecfeff; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#0891b2" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+      </div>`,
+    messageBody: `
+      <div style="margin-top: 32px; padding: 24px; border: 1px solid #e5e7eb; border-radius: 8px;">
+        <p style="margin: 0 0 8px 0; font-size: 12px; color: #6b7280; font-weight: 600;">Subject: ${subject}</p>
+        <p style="margin: 0; font-size: 14px; color: #374151; font-style: italic;">"${message}"</p>
+      </div>
+    `,
+    actionButton: { text: 'Visit Our Website', url: `${baseUrl}` }
+  });
+};
+
+const generateNoShowEmail = (booking) => {
+  return masterEmailLayout({
+    title: 'Booking No-Show',
+    themeColor: 'danger',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: 'We noticed that you did not arrive for your scheduled check-in yesterday. As a result, your booking has been marked as a No-Show.',
+    statusBadge: { text: '⚠ No-Show Recorded', bg: '#fef2f2', color: '#991b1b' },
+    bookingDetails: [
+      { label: 'Booking ID', value: booking.bookingId },
+      { label: 'Room Type', value: booking.room.name || 'Standard Room' },
+      { label: 'Scheduled Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+    ],
+    messageBody: `
+      <p style="margin-top: 24px; font-size: 14px; color: #374151; text-align: center;">
+        If this was a mistake or you still intend to visit, please contact our front desk immediately to check for room availability.
+      </p>
+    `,
+    actionButton: { text: 'Contact Support', url: `${baseUrl}/contact` }
   });
 };
 
@@ -465,5 +466,10 @@ module.exports = {
   generateCheckInEmail,
   generateCheckOutEmail,
   generateCancellationEmail,
-  generatePasswordResetEmail
+  generatePasswordResetEmail,
+  generateOTPEmail,
+  generatePaymentConfirmationEmail,
+  generateContactFormEmail,
+  generateContactConfirmationEmail,
+  generateNoShowEmail
 };
