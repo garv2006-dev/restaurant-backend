@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const sendEmail = require('../utils/sendEmail');
-const { generatePasswordResetEmail } = require('../utils/emailTemplates');
+const { generatePasswordResetEmail, generateOTPEmail } = require('../utils/emailTemplates');
 const { sendFirstTimeDiscountNotification } = require('../services/firstTimeUserService');
 
 const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
@@ -32,17 +32,7 @@ const register = async (req, res, next) => {
                 This code will expire in 3 minutes.
                 `;
 
-                const htmlMessage = `
-                <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                    <h2 style="color: #333; text-align: center;">Verify Your Account</h2>
-                    <p style="font-size: 16px; color: #555;">Hello ${existingUser.name},</p>
-                    <p style="font-size: 16px; color: #555;">You already have an account but it is not verified. Please use the verification code below to activate your account:</p>
-                    <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                        <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
-                    </div>
-                    <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
-                </div>
-                `;
+                const htmlMessage = generateOTPEmail(otp, existingUser.name);
 
                 // Send OTP via email (Non-blocking)
                 sendEmail({
@@ -105,17 +95,7 @@ const register = async (req, res, next) => {
         This code will expire in 3 minutes.
         `;
 
-        const htmlMessage = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-            <h2 style="color: #333; text-align: center;">Welcome to Our Restaurant!</h2>
-            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
-            <p style="font-size: 16px; color: #555;">Thank you for registering. Please use the verification code below to activate your account:</p>
-            <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
-            </div>
-            <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
-        </div>
-        `;
+        const htmlMessage = generateOTPEmail(otp, user.name);
 
         // Send OTP via email (Non-blocking)
         sendEmail({
@@ -428,18 +408,7 @@ If you did not request this, please ignore this email.
         console.log("✅ MESSAGE", message);
 
         // Simple HTML for OTP
-        const htmlMessage = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-            <h2 style="color: #333; text-align: center;">Reset Your Password</h2>
-            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
-            <p style="font-size: 16px; color: #555;">We received a request to reset your password. Use the verification code below to proceed:</p>
-            <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${resetToken}</span>
-            </div>
-            <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
-            <p style="font-size: 14px; color: #888; margin-top: 30px;">If you didn't request a password reset, you can safely ignore this email.</p>
-        </div>
-        `;
+        const htmlMessage = generateOTPEmail(resetToken, user.name);
 
         try {
             await sendEmail({
@@ -525,18 +494,7 @@ This link will expire soon.
 If you did not request this, please contact support immediately.
         `;
 
-        const htmlMessage = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-            <h2 style="color: #333; text-align: center;">Identity Verified</h2>
-            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
-            <p style="font-size: 16px; color: #555;">You have successfully verified the code. Please click the button below to reset your password:</p>
-            <div style="background-color: #f4f6f8; padding: 20px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <a href="${resetUrl}" style="background-color: #28a745; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 16px;">Reset Password</a>
-            </div>
-            <p style="font-size: 14px; color: #888; margin-top: 30px;">If the button doesn't work, copy and paste this link:</p>
-            <p style="font-size: 12px; color: #888; word-break: break-all;">${resetUrl}</p>
-        </div>
-        `;
+        const htmlMessage = generatePasswordResetEmail(resetUrl);
 
         try {
             await sendEmail({
@@ -725,17 +683,7 @@ const resendVerification = async (req, res, next) => {
         This code will expire in 3 minutes.
         `;
 
-        const htmlMessage = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-            <h2 style="color: #333; text-align: center;">New Verification Code</h2>
-            <p style="font-size: 16px; color: #555;">Hello ${user.name},</p>
-            <p style="font-size: 16px; color: #555;">You requested a new verification code. Please use the code below:</p>
-            <div style="background-color: #f4f6f8; padding: 15px; text-align: center; border-radius: 5px; margin: 20px 0;">
-                <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #1a73e8;">${otp}</span>
-            </div>
-            <p style="font-size: 16px; color: #555;">This code will expire in 3 minutes.</p>
-        </div>
-        `;
+        const htmlMessage = generateOTPEmail(otp, user.name);
 
         // Send (Non-blocking)
         sendEmail({

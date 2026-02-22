@@ -1,4 +1,5 @@
 const sendEmail = require('../utils/sendEmail');
+const { generateContactFormEmail, generateContactConfirmationEmail } = require('../utils/emailTemplates');
 
 // @desc    Send contact form email
 // @route   POST /api/contact
@@ -87,111 +88,9 @@ exports.sendContactEmail = async (req, res) => {
       });
     }
 
-    // Email to admin
-    const adminHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; }
-          .header { background-color: #d4af37; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-          .content { background-color: white; padding: 30px; border-radius: 0 0 5px 5px; }
-          .field { margin-bottom: 20px; }
-          .field-label { font-weight: bold; color: #d4af37; margin-bottom: 5px; }
-          .field-value { padding: 10px; background-color: #f5f5f5; border-left: 3px solid #d4af37; border-radius: 3px; }
-          .footer { text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>🏨 New Contact Form Submission</h2>
-          </div>
-          <div class="content">
-            <div class="field">
-              <div class="field-label">Name:</div>
-              <div class="field-value">${name}</div>
-            </div>
-            
-            <div class="field">
-              <div class="field-label">Email:</div>
-              <div class="field-value"><a href="mailto:${email}">${email}</a></div>
-            </div>
-            
-            <div class="field">
-              <div class="field-label">Phone:</div>
-              <div class="field-value"><a href="tel:${phone}">${phone}</a></div>
-            </div>
-            
-            <div class="field">
-              <div class="field-label">Subject:</div>
-              <div class="field-value">${subject}</div>
-            </div>
-            
-            <div class="field">
-              <div class="field-label">Message:</div>
-              <div class="field-value">${message.replace(/\n/g, '<br>')}</div>
-            </div>
-            
-            <div class="footer">
-              <p>This email was sent from the Luxury Hotel contact form</p>
-              <p>Received on: ${new Date().toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', hour12: true })}</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    // Confirmation email to user
-    const userHtml = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-          .container { max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9f9f9; }
-          .header { background-color: #d4af37; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-          .content { background-color: white; padding: 30px; border-radius: 0 0 5px 5px; }
-          .message-box { background-color: #f5f5f5; padding: 15px; border-left: 4px solid #d4af37; margin: 20px 0; }
-          .footer { text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; font-size: 12px; }
-        </style>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <h2>🏨 Thank You for Contacting Us!</h2>
-          </div>
-          <div class="content">
-            <p>Dear ${name},</p>
-            
-            <p>Thank you for reaching out to Luxury Hotel. We have received your message and our team will get back to you within 24 hours.</p>
-            
-            <div class="message-box">
-              <strong>Your Message:</strong><br>
-              <strong>Subject:</strong> ${subject}<br>
-              <strong>Message:</strong> ${message}
-            </div>
-            
-            <p>If you need immediate assistance, please feel free to call us at:</p>
-            <p><strong>📞 +91 (22) 1234-5678</strong></p>
-            
-            <p>Best regards,<br>
-            <strong>Luxury Hotel Team</strong></p>
-            
-            <div class="footer">
-              <p>Luxury Hotel | 123 Luxury Street, Premium District, Mumbai</p>
-              <p>📧 info@luxuryhotel.com | 📞 +91 (22) 1234-5678</p>
-            </div>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-    // Send emails using the shared utility (supports Brevo/Gmail automatically)
+    // Send emails using the shared utility
     // Send to Admin
+    const adminHtml = generateContactFormEmail({ name, email, phone, subject, message });
     await sendEmail({
       email: 'garvvariya03@gmail.com',
       subject: `New Contact Form Submission: ${subject}`,
@@ -200,6 +99,7 @@ exports.sendContactEmail = async (req, res) => {
     });
 
     // Send to User
+    const userHtml = generateContactConfirmationEmail(name, subject, message);
     await sendEmail({
       email: email,
       subject: 'Thank you for contacting Luxury Hotel',
