@@ -117,9 +117,7 @@ const masterEmailLayout = ({
           <!-- Header -->
           <tr>
             <td style="padding: 48px 40px 0 40px; text-align: center;">
-              <div style="margin-bottom: 24px;">
-                ${selectedIcon}
-              </div>
+
               <p style="margin: 0; color: ${colors.muted}; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;">Luxury Hotel & Rooms</p>
               <h1 style="margin: 24px 0 8px 0; font-size: 28px; font-weight: 800; color: ${colors.dark}; letter-spacing: -0.5px;">${title}</h1>
               <p style="margin: 0; color: ${colors.muted}; font-size: 15px; font-weight: 500;">Dear ${customerName},</p>
@@ -226,14 +224,6 @@ const generateCancellationEmail = (booking, cancellationFee = 0, refundAmount = 
 
   return masterEmailLayout({
     title: 'Booking Cancelled',
-    themeColor: 'danger',
-    headerIcon: `
-      <div style="width: 48px; height: 48px; border: 1px solid #e5e7eb; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </div>`,
     customerName: booking.guestDetails.primaryGuest.name,
     introMessage: 'Your reservation at Luxury Hotel & Rooms has been successfully cancelled. We hope to welcome you back another time.',
     messageBody: `
@@ -248,7 +238,7 @@ const generateCancellationEmail = (booking, cancellationFee = 0, refundAmount = 
       { label: 'Dates', value: dates },
       { label: 'Guest', value: `${booking.guestDetails.totalAdults} Adult` }
     ],
-    actionButton: { text: 'Book a New Stay', url: `${baseUrl}/rooms` }
+    actionButton: { text: 'Book a New Stay', url: `${baseUrl}/booking` }
   });
 };
 
@@ -336,13 +326,6 @@ const generateOTPEmail = (otp, customerName = 'Guest') => {
     title: 'Verification Code',
     customerName: customerName,
     introMessage: 'Please use the following one-time password (OTP) to verify your account or complete your request.',
-    headerIcon: `
-      <div style="width: 48px; height: 48px; background-color: #f3f4f6; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin: 0 auto;">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#111827" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
-          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-        </svg>
-      </div>`,
     messageBody: `
       <div style="margin-top: 32px; padding: 32px; background-color: #f9fafb; border: 1px dashed #e5e7eb; border-radius: 8px; text-align: center;">
         <h2 style="margin: 0; font-size: 36px; font-weight: 800; letter-spacing: 8px; color: #111827;">${otp}</h2>
