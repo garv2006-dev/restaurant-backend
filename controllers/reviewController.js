@@ -8,7 +8,7 @@ const Room = require('../models/Room');
 const createReview = async (req, res) => {
     try {
         const { booking, room, rating, title, comment, reviewType } = req.body;
-        
+
         console.log('Creating review with data:', { booking, room, rating, title, comment, reviewType });
 
         // Verify booking belongs to user and is completed
@@ -80,7 +80,7 @@ const createReview = async (req, res) => {
 
     } catch (error) {
         console.error('Create review error:', error);
-        
+
         // Handle validation errors
         if (error.name === 'ValidationError') {
             const messages = Object.values(error.errors).map(err => err.message);
@@ -89,7 +89,7 @@ const createReview = async (req, res) => {
                 message: messages.join(', ')
             });
         }
-        
+
         // Handle other errors
         res.status(500).json({
             success: false,
@@ -103,8 +103,8 @@ const createReview = async (req, res) => {
 // @access  Public
 const getReviews = async (req, res) => {
     try {
-        const { room, rating, page = 1, limit = 10, showAll } = req.query;
-        
+        const { room, rating, page = 1, limit = 10, showAll, search } = req.query;
+
         // For testing: allow showing unapproved reviews with ?showAll=true
         let query = {};
         if (showAll !== 'true') {
@@ -113,6 +113,16 @@ const getReviews = async (req, res) => {
 
         if (room) query.room = room;
         if (rating) query.rating = { $gte: Number(rating) };
+
+        // Handle search by username
+        if (search) {
+            const User = require('../models/User');
+            const users = await User.find({
+                name: { $regex: search, $options: 'i' }
+            }).select('_id');
+            const userIds = users.map(u => u._id);
+            query.user = { $in: userIds };
+        }
 
         const skip = (page - 1) * limit;
 
@@ -252,11 +262,11 @@ const deleteReview = async (req, res) => {
             });
         }
 
-        // Check if user owns the review or is admin
-        if (review.user.toString() !== req.user.id && req.user.role !== 'admin') {
+        // Allow deletion if admin OR review owner
+        if (req.user.role !== 'admin' && review.user.toString() !== req.user.id) {
             return res.status(403).json({
                 success: false,
-                message: 'Not authorized to delete this review'
+                message: 'Only admins or the review owner are authorized to delete this review'
             });
         }
 
@@ -330,7 +340,7 @@ const getPendingReviews = async (req, res) => {
         const reviews = await Review.find({ isApproved: false })
             .populate('user', 'name email')
             .populate('room', 'name type')
-                        .sort({ createdAt: -1 })
+            .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
 
@@ -363,7 +373,7 @@ const getPendingReviews = async (req, res) => {
 const canReviewBooking = async (req, res) => {
     try {
         const { bookingId } = req.params;
-        
+
         // Check if booking exists and belongs to user
         const booking = await Booking.findById(bookingId);
         if (!booking || booking.user.toString() !== req.user.id) {

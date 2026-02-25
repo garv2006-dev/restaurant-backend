@@ -934,7 +934,12 @@ const updateBooking = async (req, res) => {
       }
 
 
-      const gst = subtotal * 0.18;
+      // Fetch dynamic GST
+      const Settings = require('../models/Settings');
+      const settings = await Settings.findOne({ type: 'tax' });
+      const gstRate = settings ? settings.gstPercentage : 18;
+
+      const gst = subtotal * (gstRate / 100);
       updates["pricing.subtotal"] = subtotal;
       updates["pricing.taxes.gst"] = gst;
       updates["pricing.totalAmount"] = subtotal + gst;
