@@ -12,7 +12,7 @@ const createPaymentIntent = async (req, res) => {
         const { bookingId, paymentMethod } = req.body;
 
         // Find booking
-        const booking = await Booking.findById(bookingId).populate('user room');
+        const booking = await Booking.findById(bookingId).populate('user rooms.roomType');
 
         if (!booking) {
             return res.status(404).json({
@@ -110,7 +110,7 @@ const confirmPayment = async (req, res) => {
         } = req.body;
 
         // Find booking
-        const booking = await Booking.findById(bookingId).populate('user room');
+        const booking = await Booking.findById(bookingId).populate('user rooms.roomType');
 
         if (!booking) {
             return res.status(404).json({
@@ -221,8 +221,8 @@ const getPayments = async (req, res) => {
         const skip = (page - 1) * limit;
 
         const payments = await Payment.find({ user: req.user.id })
-            .populate('booking', 'bookingId room pricing.totalAmount')
-            .populate('booking.room', 'name type')
+            .populate('booking', 'bookingId rooms pricing.totalAmount')
+            .populate('booking.rooms.roomType', 'name type')
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
@@ -259,7 +259,7 @@ const getPayment = async (req, res) => {
             .populate({
                 path: 'booking',
                 populate: {
-                    path: 'room',
+                    path: 'rooms.roomType',
                     select: 'name type'
                 }
             })
@@ -398,7 +398,7 @@ const generateInvoice = async (req, res) => {
             .populate({
                 path: 'booking',
                 populate: [
-                    { path: 'room', select: 'name type' },
+                    { path: 'rooms.roomType', select: 'name type' },
                     { path: 'user', select: 'name email phone address' }
                 ]
             });
@@ -427,7 +427,7 @@ const generateInvoice = async (req, res) => {
             customer: payment.booking.user,
             items: [
                 {
-                    description: `Room booking - ${payment.booking.room.name}`,
+                    description: `Room booking - ${payment.booking.rooms.length > 1 ? `${payment.booking.rooms.length} Rooms` : payment.booking.rooms[0]?.roomType?.name || 'Stay'}`,
                     quantity: payment.booking.bookingDates.nights,
                     price: payment.booking.pricing.roomPrice / payment.booking.bookingDates.nights,
                     total: payment.booking.pricing.roomPrice
@@ -469,7 +469,7 @@ const createPayment = async (req, res) => {
         const { bookingId, paymentMethod, amount } = req.body;
 
         // Find booking
-        const booking = await Booking.findById(bookingId).populate('user room');
+        const booking = await Booking.findById(bookingId).populate('user rooms.roomType');
 
         if (!booking) {
             return res.status(404).json({
@@ -551,8 +551,8 @@ const getAllPayments = async (req, res) => {
         if (paymentMethod) query.paymentMethod = paymentMethod;
 
         const payments = await Payment.find(query)
-            .populate('booking', 'bookingId room pricing.totalAmount')
-            .populate('booking.room', 'name type')
+            .populate('booking', 'bookingId rooms pricing.totalAmount')
+            .populate('booking.rooms.roomType', 'name type')
             .populate('user', 'name email')
             .sort({ createdAt: -1 })
             .limit(Number(limit))

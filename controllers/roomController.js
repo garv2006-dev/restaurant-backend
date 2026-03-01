@@ -52,24 +52,9 @@ const getRooms = async (req, res) => {
             });
         }
 
-        // Check availability for specific dates
-        if (checkIn && checkOut) {
-            const checkInDate = new Date(checkIn);
-            const checkOutDate = new Date(checkOut);
-
-            // Find rooms that are not booked for these dates
-            const bookedRooms = await Booking.find({
-                status: { $in: ['Confirmed', 'CheckedIn'] },
-                $or: [
-                    {
-                        'bookingDates.checkInDate': { $lte: checkOutDate },
-                        'bookingDates.checkOutDate': { $gt: checkInDate }
-                    }
-                ]
-            }).distinct('room');
-
-            query._id = { $nin: bookedRooms };
-        }
+        // Availability per room-number will be computed below if dates provided.
+        // Do NOT exclude room types that have any overlapping bookings; availability
+        // must be computed using room-number level checks (see RoomNumber.getAvailableCount).
 
         // Sorting
         let sortOptions = {};
@@ -197,13 +182,21 @@ const checkAvailability = async (req, res) => {
         const checkInDate = new Date(checkIn);
         const checkOutDate = new Date(checkOut);
 
-        const isAvailable = await room.isAvailableForDates(checkInDate, checkOutDate);
+        const requestedRooms = Number(req.body.roomCount || req.body.rooms || 1);
+
+        // Get count from RoomNumbers if available (single source of truth)
+        const RoomNumber = require('../models/RoomNumber');
+        const availableCount = await RoomNumber.getAvailableCount(room._id, checkInDate, checkOutDate);
+
+        const isAvailable = await room.isAvailableForDates(checkInDate, checkOutDate, requestedRooms);
         const price = room.getPriceForDates(checkInDate, checkOutDate);
 
         res.status(200).json({
             success: true,
             data: {
                 available: isAvailable,
+                availableCount,
+                requestedRooms,
                 totalPrice: price,
                 checkIn: checkInDate,
                 checkOut: checkOutDate,

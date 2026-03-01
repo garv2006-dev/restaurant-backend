@@ -14,6 +14,7 @@ const {
     getBooking,
     updateBooking,
     cancelBooking,
+    partialCancelBooking,
     confirmBooking,
     checkInBooking,
     checkOutBooking
@@ -33,6 +34,7 @@ router.get('/', getBookings);
 router.get('/:id', getBooking);
 router.put('/:id', updateBooking);
 router.put('/:id/cancel', cancelBooking);
+router.put('/:id/partial-cancel', partialCancelBooking);
 
 // Admin/Staff routes
 router.put('/:id/confirm', authorize('admin', 'staff'), confirmBooking);

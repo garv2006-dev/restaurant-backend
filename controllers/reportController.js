@@ -137,10 +137,11 @@ const getRoomAnalytics = async (startDate, endDate) => {
         status: { $ne: 'Cancelled' }
       }
     },
+    { $unwind: '$rooms' },
     {
       $lookup: {
         from: 'rooms',
-        localField: 'room',
+        localField: 'rooms.roomType',
         foreignField: '_id',
         as: 'roomInfo'
       }
@@ -152,7 +153,7 @@ const getRoomAnalytics = async (startDate, endDate) => {
       $group: {
         _id: '$roomInfo.type',
         count: { $sum: 1 },
-        revenue: { $sum: '$pricing.totalAmount' }
+        revenue: { $sum: '$rooms.price' }
       }
     },
     {
@@ -328,11 +329,12 @@ const getPerformanceAnalytics = async (startDate, endDate) => {
         status: { $in: ['Confirmed', 'CheckedIn', 'CheckedOut'] }
       }
     },
+    { $unwind: '$rooms' },
     {
       $group: {
-        _id: '$room',
+        _id: '$rooms.roomType',
         bookings: { $sum: 1 },
-        revenue: { $sum: '$pricing.totalAmount' }
+        revenue: { $sum: '$rooms.price' }
       }
     },
     {
@@ -518,10 +520,10 @@ const getLiveMetrics = async (today, tomorrow) => {
 const getRecentBookings = async () => {
   return await Booking.find({})
     .populate('user', 'name email')
-    .populate('room', 'name type')
+    .populate('rooms.roomType', 'name type')
     .sort({ createdAt: -1 })
     .limit(10)
-    .select('bookingId status pricing.totalAmount createdAt');
+    .select('bookingId status pricing.totalAmount createdAt rooms');
 };
 
 // Helper function for today's hourly revenue

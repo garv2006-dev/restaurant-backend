@@ -14,6 +14,7 @@ require('dotenv').config();
 const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const { initializeSocket } = require('./config/socket');
+const { startAutoCancelScheduler } = require('./utils/autoCancelBookings');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -198,6 +199,9 @@ const server = app.listen(PORT, () => {
 // Initialize Socket.io AFTER server starts
 initializeSocket(server);
 console.log('✅ Socket.io initialized');
+
+// Start auto-cancel scheduler for expired bookings
+startAutoCancelScheduler();
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err, promise) => {

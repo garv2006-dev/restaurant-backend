@@ -167,7 +167,20 @@ const clearAllNotifications = async (req, res) => {
 // @access  Private/Admin (for internal calls)
 const createRoomBookingNotification = async (userId, bookingData, action) => {
     try {
-        const { booking, room, status } = bookingData;
+        const { booking, status } = bookingData;
+        // Support both `room` (singular) and `rooms` (array) from callers
+        let room = bookingData.room;
+        if (!room && bookingData.rooms && bookingData.rooms.length > 0) {
+            // Extract the first room's roomType (may be populated object or ID)
+            const firstRoom = bookingData.rooms[0];
+            room = firstRoom.roomType && typeof firstRoom.roomType === 'object'
+                ? firstRoom.roomType
+                : { _id: firstRoom.roomType, name: 'Room' };
+        }
+        // Fallback if room is still not available
+        if (!room) {
+            room = { _id: null, name: 'Room' };
+        }
 
         let title, message, bookingStatus;
 

@@ -8,7 +8,7 @@ const Payment = require('../models/Payment');
 const getProfile = async (req, res) => {
     try {
         const user = await User.findById(req.user.id);
-        
+
         res.status(200).json({
             success: true,
             data: user
@@ -59,7 +59,7 @@ const updateProfile = async (req, res) => {
 
     } catch (error) {
         console.error('Update profile error:', error);
-        
+
         if (error.code === 11000) {
             const field = Object.keys(error.keyValue)[0];
             return res.status(400).json({
@@ -116,12 +116,12 @@ const getDashboard = async (req, res) => {
     try {
         // Get user statistics
         const totalBookings = await Booking.countDocuments({ user: req.user.id });
-        const completedBookings = await Booking.countDocuments({ 
-            user: req.user.id, 
-            status: 'CheckedOut' 
+        const completedBookings = await Booking.countDocuments({
+            user: req.user.id,
+            status: 'CheckedOut'
         });
-        const upcomingBookings = await Booking.countDocuments({ 
-            user: req.user.id, 
+        const upcomingBookings = await Booking.countDocuments({
+            user: req.user.id,
             status: { $in: ['Confirmed', 'CheckedIn'] },
             'bookingDates.checkInDate': { $gte: new Date() }
         });
@@ -136,7 +136,7 @@ const getDashboard = async (req, res) => {
 
         // Get recent bookings
         const recentBookings = await Booking.find({ user: req.user.id })
-            .populate('room', 'name type images')
+            .populate('rooms.roomType', 'name type images')
             .sort({ createdAt: -1 })
             .limit(5);
 
@@ -238,12 +238,12 @@ const deleteAccount = async (req, res) => {
 const getUsers = async (req, res) => {
     try {
         const { role, isActive, search, page = 1, limit = 20 } = req.query;
-        
+
         let query = {};
 
         if (role) query.role = role;
         if (isActive !== undefined) query.isActive = isActive === 'true';
-        
+
         if (search) {
             query.$or = [
                 { name: { $regex: search, $options: 'i' } },
@@ -266,7 +266,7 @@ const getUsers = async (req, res) => {
         const usersWithStats = await Promise.all(users.map(async (user) => {
             // Get booking count
             const totalBookings = await Booking.countDocuments({ user: user._id });
-            
+
             // Get total spent
             const paymentStats = await Payment.aggregate([
                 {
@@ -282,9 +282,9 @@ const getUsers = async (req, res) => {
                     }
                 }
             ]);
-            
+
             const totalSpent = paymentStats.length > 0 ? paymentStats[0].totalSpent : 0;
-            
+
             return {
                 ...user,
                 totalBookings,
@@ -332,12 +332,12 @@ const getUser = async (req, res) => {
         // Get user statistics
         const bookingStats = await Booking.aggregate([
             { $match: { user: user._id } },
-            { 
-                $group: { 
-                    _id: '$status', 
+            {
+                $group: {
+                    _id: '$status',
                     count: { $sum: 1 },
                     totalSpent: { $sum: '$pricing.totalAmount' }
-                } 
+                }
             }
         ]);
 
@@ -364,7 +364,7 @@ const getUser = async (req, res) => {
 const updateUser = async (req, res) => {
     try {
         const fieldsToUpdate = {};
-        
+
         // Only allow certain fields to be updated by admin
         const allowedFields = ['name', 'role', 'isActive'];
         allowedFields.forEach(field => {
