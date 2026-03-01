@@ -111,6 +111,12 @@ RoomNumberSchema.index({ roomNumber: 1, roomType: 1 }, { unique: true });
 
 // Method to check if room is available for given dates
 RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut) {
+    // Normalize dates to day boundaries for consistent overlap checking
+    const normalizedCheckIn = new Date(checkIn);
+    normalizedCheckIn.setHours(0, 0, 0, 0);
+    const normalizedCheckOut = new Date(checkOut);
+    normalizedCheckOut.setHours(23, 59, 59, 999);
+
     // Check strict manual status
     if (this.status === 'Maintenance' || this.status === 'Out of Service') {
         return false;
@@ -118,23 +124,33 @@ RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut
 
     // Check if room is in maintenance during the requested dates
     const isInMaintenance = this.maintenanceSchedule.some(maintenance => {
-        return (checkIn <= maintenance.endDate && checkOut >= maintenance.startDate);
+        return (normalizedCheckIn <= maintenance.endDate && normalizedCheckOut >= maintenance.startDate);
     });
 
     if (isInMaintenance) return false;
 
     // Check availability in RoomAllocation (Single Source of Truth)
     const RoomAllocation = mongoose.model('RoomAllocation');
-    // Allow same-day turnover: if existing checkout equals new check-in, no conflict
-    // Conflict exists ONLY if: RequestStart < ExistingEnd AND RequestEnd > ExistingStart
-    const hasConflict = await RoomAllocation.exists({
+
+    // Rough overlap query to narrow candidates
+    const potentialConflicts = await RoomAllocation.find({
         roomNumber: this._id,
         status: 'Active',
-        checkInDate: { $lt: checkOut },  // Existing check-in is before new checkout
-        checkOutDate: { $gt: checkIn }   // Existing checkout is AFTER new check-in (allows same-day)
+        checkInDate: { $lt: normalizedCheckOut },   // existing start before requested end
+        checkOutDate: { $gt: normalizedCheckIn }    // existing end after requested start
     });
 
-    if (hasConflict) return false;
+    // Examine each allocation and ignore those where the existing checkout day exactly matches the new check-in day
+    for (const alloc of potentialConflicts) {
+        const allocCheckoutDay = new Date(alloc.checkOutDate);
+        allocCheckoutDay.setHours(0, 0, 0, 0);
+        if (allocCheckoutDay.getTime() === normalizedCheckIn.getTime()) {
+            // same-day turnover is allowed
+            continue;
+        }
+        // any other allocation constitutes a conflict
+        return false;
+    }
 
     return this.isActive;
 };
@@ -202,7 +218,9 @@ RoomNumberSchema.methods.markOccupied = async function (actualCheckInTime) {
 // Static method to find available room for a room type and date range
 RoomNumberSchema.statics.findAvailableRoom = async function (roomTypeId, checkInDate, checkOutDate) {
     const checkIn = new Date(checkInDate);
+    checkIn.setHours(0, 0, 0, 0);
     const checkOut = new Date(checkOutDate);
+    checkOut.setHours(23, 59, 59, 999);
 
     // Find all active rooms of this type
     // We fetch ALL because filtering by availability needs async check against RoomAllocation
@@ -224,7 +242,9 @@ RoomNumberSchema.statics.findAvailableRoom = async function (roomTypeId, checkIn
 // Static method to get available room count for a room type and date range
 RoomNumberSchema.statics.getAvailableCount = async function (roomTypeId, checkInDate, checkOutDate) {
     const checkIn = new Date(checkInDate);
+    checkIn.setHours(0, 0, 0, 0);
     const checkOut = new Date(checkOutDate);
+    checkOut.setHours(23, 59, 59, 999);
 
     const rooms = await this.find({
         roomType: roomTypeId,

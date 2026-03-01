@@ -422,7 +422,8 @@ const canReviewBooking = async (req, res) => {
             booking: {
                 id: booking._id,
                 bookingId: booking.bookingId,
-                room: booking.room,
+                room: booking.rooms[0]?.roomType,
+                rooms: booking.rooms,
                 checkOutDate: booking.bookingDates.checkOutDate
             }
         });

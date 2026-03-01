@@ -204,29 +204,63 @@ RoomSchema.index({ 'price.basePrice': 1 });
 RoomSchema.index({ isActive: 1 });
 
 // Method to check if room is available for given dates
-RoomSchema.methods.isAvailableForDates = async function (checkIn, checkOut) {
-    const Booking = mongoose.model('Booking');
+// requestedRooms: number of rooms desired for this room type (defaults to 1)
+RoomSchema.methods.isAvailableForDates = async function (checkIn, checkOut, requestedRooms = 1) {
+    // Basic validation
+    if (!(checkIn instanceof Date)) checkIn = new Date(checkIn);
+    if (!(checkOut instanceof Date)) checkOut = new Date(checkOut);
 
-    // Check if room is in maintenance during the requested dates
+    // Normalize dates to day boundaries for consistent overlap checking
+    checkIn.setHours(0, 0, 0, 0);
+    checkOut.setHours(23, 59, 59, 999);
+
+    // Check-out must be after check-in
+    if (checkOut <= checkIn) return false;
+
+    // Maintenance schedule conflict
     const isInMaintenance = this.maintenanceSchedule.some(maintenance => {
-        return (checkIn <= maintenance.endDate && checkOut >= maintenance.startDate);
+        return (checkIn < maintenance.endDate && checkOut > maintenance.startDate);
     });
 
     if (isInMaintenance) return false;
 
-    // Check for existing bookings
-    const conflictingBookings = await Booking.countDocuments({
-        room: this._id,
-        status: { $in: ['Confirmed', 'CheckedIn'] },
-        $or: [
-            {
-                checkInDate: { $lte: checkOut },
-                checkOutDate: { $gt: checkIn }
-            }
-        ]
-    });
+    // Room must be active and available generally
+    if (!this.isActive || this.status !== 'Available') return false;
 
-    return conflictingBookings === 0 && this.status === 'Available' && this.isActive;
+    // If concrete room numbers exist for this room type, prefer that single-source-of-truth
+    const RoomNumber = mongoose.model('RoomNumber');
+    const totalRoomNumbers = await RoomNumber.countDocuments({ roomType: this._id, isActive: true });
+
+    if (totalRoomNumbers > 0) {
+        const availableCount = await RoomNumber.getAvailableCount(this._id, checkIn, checkOut);
+        return availableCount >= Number(requestedRooms);
+    }
+
+    // Fallback: aggregate overlapping bookings for this room type (no explicit room numbers)
+    const Booking = mongoose.model('Booking');
+
+    // Night-based booking overlap check
+    // A room is NOT available if an existing booking overlaps with any night of the new booking.
+    // Overlap condition: existingCheckInDate < newCheckOutDate AND existingCheckOutDate > newCheckInDate
+    const overlapMatch = {
+        status: { $in: ['Confirmed', 'CheckedIn'] },
+        'bookingDates.checkInDate': { $lt: checkOut },     // existingCheckInDate < newCheckOutDate
+        'bookingDates.checkOutDate': { $gt: checkIn },     // existingCheckOutDate > newCheckInDate
+        'rooms.roomType': this._id
+    };
+
+    const agg = await Booking.aggregate([
+        { $match: overlapMatch },
+        { $project: { rooms: 1 } },
+        { $unwind: '$rooms' },
+        { $match: { 'rooms.roomType': this._id, 'rooms.status': { $ne: 'Cancelled' } } },
+        { $group: { _id: null, bookedRooms: { $sum: 1 } } }
+    ]);
+
+    const bookedRooms = (agg[0] && agg[0].bookedRooms) ? agg[0].bookedRooms : 0;
+    const availableRooms = (this.totalRooms || 0) - bookedRooms;
+
+    return availableRooms >= Number(requestedRooms);
 };
 
 // Method to get price for specific dates

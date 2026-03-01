@@ -10,30 +10,31 @@ const BookingSchema = new mongoose.Schema({
         ref: 'User',
         required: [true, 'Booking must belong to a user']
     },
-    room: {
-        type: mongoose.Schema.ObjectId,
-        ref: 'Room',
-        required: [true, 'Booking must be for a room']
-    },
-    roomNumber: {
-        type: mongoose.Schema.ObjectId,
-        ref: 'RoomNumber',
-        default: null
-    },
-    roomNumberInfo: {
-        number: {
-            type: String,
-            default: null
+    rooms: [{
+        roomType: {
+            type: mongoose.Schema.ObjectId,
+            ref: 'Room',
+            required: true
         },
-        floor: {
+        roomNumber: {
+            type: mongoose.Schema.ObjectId,
+            ref: 'RoomNumber',
+            required: true
+        },
+        roomNumberInfo: {
+            number: String,
+            floor: Number
+        },
+        price: {
             type: Number,
-            default: null
+            required: true
         },
-        allocatedAt: {
-            type: Date,
-            default: null
+        status: {
+            type: String,
+            enum: ['Confirmed', 'Cancelled'],
+            default: 'Confirmed'
         }
-    },
+    }],
     guestDetails: {
         primaryGuest: {
             name: {
@@ -150,7 +151,7 @@ const BookingSchema = new mongoose.Schema({
     },
     status: {
         type: String,
-        enum: ['Pending', 'Confirmed', 'CheckedIn', 'CheckedOut', 'Cancelled', 'NoShow'],
+        enum: ['Pending', 'Confirmed', 'CheckedIn', 'CheckedOut', 'Cancelled', 'PartiallyCancelled', 'NoShow'],
         default: 'Pending'
     },
     paymentStatus: {
@@ -270,17 +271,57 @@ BookingSchema.pre('save', function (next) {
     next();
 });
 
-// Validation: Check-out date must be after check-in date
+// Validation: Night-only booking constraints
 BookingSchema.pre('save', function (next) {
-    if (this.bookingDates.checkOutDate <= this.bookingDates.checkInDate) {
-        next(new Error('Check-out date must be after check-in date'));
+    const { checkInDate, checkOutDate } = this.bookingDates;
+    const checkIn = new Date(checkInDate);
+    const checkOut = new Date(checkOutDate);
+
+    // Normalize to midnight for comparison
+    checkIn.setHours(0, 0, 0, 0);
+    checkOut.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Check 1: Check-in date cannot be in the past — ONLY for new bookings.
+    // Existing bookings (status updates, etc.) must not be blocked by this rule.
+    if (this.isNew && checkIn < today) {
+        return next(new Error('Check-in date cannot be in the past'));
     }
+
+    // Check 2: Check-out date must be greater than check-in date (no same-day bookings)
+    // Only validate when dates are actually being changed or on new bookings.
+    const datesModified = this.isNew ||
+        this.isModified('bookingDates.checkInDate') ||
+        this.isModified('bookingDates.checkOutDate');
+
+    if (datesModified) {
+        if (checkOut <= checkIn) {
+            return next(new Error('Same-day check-in and check-out is NOT allowed. Check-out date must be greater than check-in date'));
+        }
+
+        // Calculate and validate nights
+        const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+        if (nights < 1) {
+            return next(new Error('Minimum 1 night required for booking'));
+        }
+    }
+
     next();
 });
 
 // Method to calculate total amount
 BookingSchema.methods.calculateTotalAmount = function () {
-    let subtotal = this.pricing.roomPrice;
+    // Sum prices from all active rooms
+    let roomPriceTotal = 0;
+    this.rooms.forEach(room => {
+        if (room.status !== 'Cancelled') {
+            roomPriceTotal += room.price;
+        }
+    });
+
+    this.pricing.roomPrice = roomPriceTotal;
+    let subtotal = roomPriceTotal;
 
     // Add extra services
     this.pricing.extraServices.forEach(service => {

@@ -6,6 +6,8 @@ const User = require("../models/User");
 const sendEmail = require("../utils/sendEmail");
 const Payment = require("../models/Payment");
 const Discount = require("../models/Discount");
+const RoomAllocation = require("../models/RoomAllocation");
+// const RewardRedemption = require("../models/RewardRedemption");
 const {
   generateBookingConfirmationEmail,
   generateCancellationEmail,
@@ -20,6 +22,10 @@ const {
   getSocketIo
 } = require("../config/socket");
 const { createRoomBookingNotification } = require("./notificationController");
+const {
+  validateBookingDates,
+  generateBookingDatesSummary
+} = require("../utils/bookingDateValidation");
 
 // @desc    Validate discount code for booking
 // @route   POST /api/bookings/validate-discount
@@ -152,6 +158,19 @@ const createBooking = async (req, res) => {
       redemptionCode, // New redemption code field
     } = req.body;
 
+    // ============================================
+    // NIGHT-BASED BOOKING VALIDATION
+    // ============================================
+
+    // Validate booking dates for night-only stays
+    const dateValidation = validateBookingDates(checkInDate, checkOutDate);
+    if (!dateValidation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: dateValidation.error
+      });
+    }
+
     // Find room
     const room = await Room.findById(roomId);
     if (!room) {
@@ -162,52 +181,75 @@ const createBooking = async (req, res) => {
     }
 
     // Validate guest capacity
-    const totalGuests = (guestDetails.totalAdults || 0) + (guestDetails.totalChildren || 0);
-    const maxCapacity = (room.capacity.adults || 0) + (room.capacity.children || 0);
+    const roomCount = Number(req.body.roomCount || 1);
+    const totalAdults = Number(guestDetails.totalAdults || 0);
+    const totalChildren = Number(guestDetails.totalChildren || 0);
 
-    if (totalGuests > maxCapacity) {
+    const totalGuests = totalAdults + totalChildren;
+    const maxCapacityPerRoom = (room.capacity.adults || 0) + (room.capacity.children || 0);
+    const totalMaxCapacity = maxCapacityPerRoom * roomCount;
+
+    if (totalGuests > totalMaxCapacity) {
       return res.status(400).json({
         success: false,
-        message: `Room capacity exceeded.This room can accommodate maximum ${maxCapacity} guests(${room.capacity.adults} adults + ${room.capacity.children} children).You selected ${totalGuests} guests.`,
+        message: `Total capacity exceeded. These ${roomCount} room(s) can accommodate maximum ${totalMaxCapacity} guests (${room.capacity.adults * roomCount} adults + ${room.capacity.children * roomCount} children). You selected ${totalGuests} guests.`,
       });
     }
 
-    if (guestDetails.totalAdults < 1) {
+    if (totalAdults < 1) {
       return res.status(400).json({
         success: false,
         message: "At least one adult is required for booking",
       });
     }
 
-    if (guestDetails.totalAdults > room.capacity.adults) {
+    if (totalAdults > (room.capacity.adults * roomCount)) {
       return res.status(400).json({
         success: false,
-        message: `Maximum ${room.capacity.adults} adults allowed for this room`,
+        message: `Maximum ${room.capacity.adults * roomCount} adults allowed for ${roomCount} room(s)`,
       });
     }
 
-    if (guestDetails.totalChildren > room.capacity.children) {
+    if (totalChildren > (room.capacity.children * roomCount)) {
       return res.status(400).json({
         success: false,
-        message: `Maximum ${room.capacity.children} children allowed for this room`,
+        message: `Maximum ${room.capacity.children * roomCount} children allowed for ${roomCount} room(s)`,
       });
     }
 
-    // Check availability
-    const checkIn = new Date(checkInDate);
-    const checkOut = new Date(checkOutDate);
+    // Prepare raw Date objects (no time normalization) for pricing
+    const rawCheckIn = new Date(checkInDate);
+    const rawCheckOut = new Date(checkOutDate);
 
-    const isAvailable = await room.isAvailableForDates(checkIn, checkOut);
+    // Availability normalization (0:00 start, 23:59 end) used for overlap checks
+    const availCheckIn = new Date(rawCheckIn);
+    availCheckIn.setHours(0, 0, 0, 0);
+    const availCheckOut = new Date(rawCheckOut);
+    availCheckOut.setHours(23, 59, 59, 999);
+
+    // Allocation normalization (store as midnight boundaries)
+    const allocCheckIn = new Date(rawCheckIn);
+    allocCheckIn.setHours(0, 0, 0, 0);
+    const allocCheckOut = new Date(rawCheckOut);
+    allocCheckOut.setHours(0, 0, 0, 0);
+
+    // General checkIn/checkOut used for availability checks and booking storage
+    const checkIn = new Date(rawCheckIn);
+    checkIn.setHours(0, 0, 0, 0);
+    const checkOut = new Date(rawCheckOut);
+    checkOut.setHours(23, 59, 59, 999);
+
+    const isAvailable = await room.isAvailableForDates(availCheckIn, availCheckOut, roomCount);
     if (!isAvailable) {
       return res.status(400).json({
         success: false,
-        message: "Room is not available for selected dates",
+        message: "Room not available for selected nights"
       });
     }
 
-    // Calculate pricing
-    const roomPrice = room.getPriceForDates(checkIn, checkOut);
-    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+    // Calculate pricing using raw dates so that nights = checkOut - checkIn correctly
+    const roomPrice = room.getPriceForDates(rawCheckIn, rawCheckOut);
+    const nights = Math.ceil((rawCheckOut - rawCheckIn) / (1000 * 60 * 60 * 24));
 
     let subtotal = roomPrice;
 
@@ -300,6 +342,7 @@ const createBooking = async (req, res) => {
     let appliedRedemption = null;
     let redemptionDiscountAmount = 0;
 
+    /* 
     if (redemptionCode) {
       try {
         // Find and validate redemption
@@ -355,20 +398,64 @@ const createBooking = async (req, res) => {
         });
       }
     }
+    */
 
     // Check for room availability (CAPACITY CHECK)
+    const selectedRoomNumbers = req.body.roomNumbers || []; // Array of room number strings
+
     const availableRoomCount = await RoomNumber.getAvailableCount(roomId, checkIn, checkOut);
 
-    if (availableRoomCount <= 0) {
+    if (availableRoomCount < roomCount) {
       return res.status(400).json({
         success: false,
-        message: "Room is sold out for the selected dates. Please choose different dates or room type.",
+        message: `Only ${availableRoomCount} rooms available for the selected dates. You requested ${roomCount} rooms.`,
       });
     }
 
+    // Verify specific room numbers if provided
+    let roomNumberDocs = [];
+    if (selectedRoomNumbers.length > 0) {
+      if (selectedRoomNumbers.length !== roomCount) {
+        return res.status(400).json({
+          success: false,
+          message: `Number of selected room numbers (${selectedRoomNumbers.length}) does not match room count (${roomCount}).`,
+        });
+      }
+
+      for (const num of selectedRoomNumbers) {
+        const rn = await RoomNumber.findOne({ roomNumber: num, roomType: roomId, isActive: true });
+        if (!rn) {
+          return res.status(400).json({ success: false, message: `Room number ${num} not found or inactive.` });
+        }
+        if (!(await rn.isAvailableForDates(checkIn, checkOut))) {
+          return res.status(400).json({ success: false, message: `Room number ${num} is not available for selected dates.` });
+        }
+        roomNumberDocs.push(rn);
+      }
+    } else {
+      // Auto-allocate room numbers if not provided
+      const allAvailable = await RoomNumber.find({ roomType: roomId, isActive: true });
+      for (const rn of allAvailable) {
+        if (!roomNumberDocs.map(d => d._id.toString()).includes(rn._id.toString())) {
+          if (await rn.isAvailableForDates(checkIn, checkOut)) {
+            roomNumberDocs.push(rn);
+            if (roomNumberDocs.length === roomCount) break;
+          }
+        }
+      }
+
+      if (roomNumberDocs.length < roomCount) {
+        return res.status(400).json({ success: false, message: "Could not find enough available room numbers." });
+      }
+    }
+
+    // Calculate total room price (sum for all rooms)
+    const perRoomPrice = room.getPriceForDates(rawCheckIn, rawCheckOut);
+    const totalRoomPrice = perRoomPrice * roomCount;
+
     // Calculate final amounts
     const totalDiscountAmount = discountAmount + redemptionDiscountAmount;
-    const subtotalAfterDiscounts = subtotal - totalDiscountAmount;
+    const subtotalAfterDiscounts = (totalRoomPrice + (extraServices?.reduce((sum, s) => sum + (s.price * s.quantity), 0) || 0)) - totalDiscountAmount;
 
     // Fetch dynamic GST settings
     const Settings = require('../models/Settings');
@@ -386,10 +473,21 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Create booking with discount and redemption information
+    // Prepare rooms array for the new Booking model structure
+    const bookingRooms = roomNumberDocs.map(rn => ({
+      roomType: roomId,
+      roomNumber: rn._id,
+      roomNumberInfo: {
+        number: rn.roomNumber,
+        floor: rn.floor
+      },
+      price: perRoomPrice
+    }));
+
+    // Create booking with multiple rooms
     const booking = await Booking.create({
       user: req.user.id,
-      room: roomId,
+      rooms: bookingRooms,
       guestDetails,
       bookingDates: {
         checkInDate: checkIn,
@@ -397,9 +495,9 @@ const createBooking = async (req, res) => {
         nights,
       },
       pricing: {
-        roomPrice,
+        roomPrice: totalRoomPrice,
         extraServices: extraServices || [],
-        subtotal,
+        subtotal: totalRoomPrice + (extraServices?.reduce((sum, s) => sum + (s.price * s.quantity), 0) || 0),
         discount: appliedDiscount ? {
           couponCode: appliedDiscount.code,
           amount: discountAmount,
@@ -428,57 +526,41 @@ const createBooking = async (req, res) => {
       },
     });
 
-    // AUTO-ALLOCATE ROOM NUMBER
-    // Find an available room number for this room type and date range
-    try {
-      const availableRoomNumber = await RoomNumber.findAvailableRoom(roomId, checkIn, checkOut);
+    // ALLOCATE ROOM NUMBERS
+    const RoomAllocation = require('../models/RoomAllocation');
+    const now = new Date();
+    const isActiveNow = (allocCheckIn <= now && allocCheckOut > now);
 
-      if (availableRoomNumber) {
-        // Create RoomAllocation (Single Source of Truth)
-        const RoomAllocation = require('../models/RoomAllocation'); // Import lazily or at top
+    for (const rn of roomNumberDocs) {
+      try {
         await RoomAllocation.create({
           booking: booking._id,
-          roomNumber: availableRoomNumber._id,
+          roomNumber: rn._id,
           roomType: roomId,
           guestName: guestDetails.primaryGuest.name,
-          checkInDate: checkIn,
-          checkOutDate: checkOut,
+          checkInDate: allocCheckIn,
+          checkOutDate: allocCheckOut,
           status: 'Active'
         });
 
-        // Only allocate the room number status if the booking is active NOW
-        const now = new Date();
-        const isActiveNow = (checkIn <= now && checkOut > now);
-
         if (isActiveNow) {
-          await availableRoomNumber.allocate(
+          await rn.allocate(
             booking._id,
             req.user.id,
             guestDetails.primaryGuest.name,
-            checkIn,
-            checkOut
+            allocCheckIn,
+            allocCheckOut
           );
         }
-
-        // Update booking with room number info
-        booking.roomNumber = availableRoomNumber._id;
-        booking.roomNumberInfo = {
-          number: availableRoomNumber.roomNumber,
-          floor: availableRoomNumber.floor,
-          allocatedAt: new Date()
-        };
-        await booking.save();
-
-        console.log(`Room number ${availableRoomNumber.roomNumber} assigned to booking ${booking.bookingId} `);
-      } else {
-        console.warn(`No available room number found for booking ${booking.bookingId}.Room type: ${roomId} `);
+        console.log(`Room number ${rn.roomNumber} assigned to booking ${booking.bookingId}`);
+      } catch (allocationError) {
+        console.error(`Error allocating room number ${rn.roomNumber}:`, allocationError);
       }
-    } catch (allocationError) {
-      console.error('Room number auto-allocation error:', allocationError);
     }
 
     // If redemption was applied, mark it as used
 
+    /* 
     if (appliedRedemption) {
       try {
         const redemption = await RewardRedemption.findOne({
@@ -498,6 +580,7 @@ const createBooking = async (req, res) => {
         // Continue with booking creation even if redemption update fails
       }
     }
+    */
     if (appliedDiscount) {
       try {
         const discount = await Discount.findById(appliedDiscount.discountId);
@@ -638,7 +721,7 @@ const createBooking = async (req, res) => {
     // Populate booking details
     await booking.populate([
       { path: "user", select: "name email phone" },
-      { path: "room", select: "name type" },
+      { path: "rooms.roomType", select: "name type" },
     ]);
 
     // Send confirmation email
@@ -653,7 +736,7 @@ Your booking has been received and is PENDING CONFIRMATION!
 BOOKING DETAILS:
 - Booking ID: ${booking.bookingId}
 - Status: PENDING(Awaiting Admin Confirmation)
-  - Room: ${booking.room.name} (${booking.room.type})
+  - Rooms: ${booking.rooms.map(r => `${r.roomNumberInfo.number} (${r.roomType.name})`).join(', ')}
 - Check -in Date: ${checkIn.toDateString()}
 - Check - out Date: ${checkOut.toDateString()}
 - Number of Nights: ${nights}
@@ -700,7 +783,7 @@ Best regards,
       emitNewBooking({
         bookingId: booking.bookingId,
         customerName: guestDetails.primaryGuest.name,
-        roomName: booking.room.name,
+        roomName: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0].roomType.name,
         checkInDate: checkIn,
         checkOutDate: checkOut,
         totalAmount,
@@ -713,7 +796,7 @@ Best regards,
       // Create notification in database for USER
       await createRoomBookingNotification(
         req.user.id,
-        { booking, room: booking.room, status: booking.status },
+        { booking, rooms: booking.rooms, status: booking.status },
         'created'
       );
 
@@ -724,7 +807,7 @@ Best regards,
           try {
             await createRoomBookingNotification(
               admin._id,
-              { booking, room: booking.room, status: booking.status },
+              { booking, rooms: booking.rooms, status: booking.status },
               'created_admin'
             );
 
@@ -773,7 +856,7 @@ const getBookings = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const bookings = await Booking.find(query)
-      .populate("room", "_id id name type images")
+      .populate("rooms.roomType", "_id id name type images")
       .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
@@ -817,7 +900,7 @@ const getAllBookings = async (req, res) => {
 
     const bookings = await Booking.find(query)
       .populate("user", "name email phone")
-      .populate("room", "_id id name type images")
+      .populate("rooms.roomType", "_id id name type images")
       .sort({ createdAt: -1 })
       .limit(Number(limit))
       .skip(skip);
@@ -851,7 +934,7 @@ const getBooking = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
       .populate("user", "name email phone")
-      .populate("room", "name type images amenities features")
+      .populate("rooms.roomType", "name type images amenities features")
       ;
 
     if (!booking) {
@@ -923,7 +1006,6 @@ const updateBooking = async (req, res) => {
 
     // Recalculate pricing if services or menu items are updated
     if (updates.extraServices) {
-      const room = await Room.findById(booking.room);
       let subtotal = booking.pricing.roomPrice;
 
       if (updates.extraServices) {
@@ -948,7 +1030,7 @@ const updateBooking = async (req, res) => {
     booking = await Booking.findByIdAndUpdate(req.params.id, updates, {
       new: true,
       runValidators: true,
-    }).populate("room", "name type");
+    }).populate("rooms.roomType", "name type");
 
     res.status(200).json({
       success: true,
@@ -1024,7 +1106,14 @@ const cancelBooking = async (req, res) => {
 
     // Calculate cancellation fee
     const cancellationFee = booking.calculateCancellationFee();
-    const refundAmount = booking.pricing.totalAmount - cancellationFee;
+    let refundAmount = booking.pricing.totalAmount - cancellationFee;
+
+    // For Cash bookings, no online refund is needed since payment wasn't collected online
+    const paymentMethod = booking.paymentDetails?.method || '';
+    const isCashPayment = paymentMethod.toLowerCase() === 'cash';
+    if (isCashPayment) {
+      refundAmount = 0;
+    }
 
     // Update booking
     booking.status = "Cancelled";
@@ -1040,38 +1129,39 @@ const cancelBooking = async (req, res) => {
       booking.paymentDetails.refundAmount = refundAmount;
     }
 
-    // Deallocate room number if allocated (make it available for new bookings)
-    // Robust check: Check both booking.roomNumber and RoomNumber collection
-    let roomNumberToDeallocate = null;
+    // Update all rooms status to Cancelled
+    booking.rooms.forEach(room => {
+      room.status = 'Cancelled';
+    });
 
-    if (booking.roomNumber) {
-      roomNumberToDeallocate = await RoomNumber.findById(booking.roomNumber);
-    }
+    // Deallocate all room numbers for this booking
+    const RoomAllocation = require('../models/RoomAllocation');
 
-    if (!roomNumberToDeallocate) {
-      // Fallback: Find room where this booking is the current allocation
-      roomNumberToDeallocate = await RoomNumber.findOne({
-        'currentAllocation.booking': booking._id
-      });
-    }
+    for (const roomItem of booking.rooms) {
+      if (roomItem.roomNumber) {
+        try {
+          const roomNumberDoc = await RoomNumber.findById(roomItem.roomNumber);
+          if (roomNumberDoc) {
+            await roomNumberDoc.deallocate();
+            console.log(`Room number ${roomNumberDoc.roomNumber} deallocated`);
+          }
 
-    if (roomNumberToDeallocate) {
-      try {
-        await roomNumberToDeallocate.deallocate();
-        console.log(`Room number ${roomNumberToDeallocate.roomNumber} deallocated after booking cancellation`);
-
-        // Also cancel the RoomAllocation record (Source of Truth)
-        const RoomAllocation = require('../models/RoomAllocation');
-        await RoomAllocation.findOneAndUpdate(
-          { booking: booking._id },
-          { status: 'Cancelled' }
-        );
-
-      } catch (roomNumberError) {
-        console.error('Error deallocating room number on cancellation:', roomNumberError);
-        // Continue with cancellation even if deallocation fails
+          // Cancel the RoomAllocation record
+          await RoomAllocation.findOneAndUpdate(
+            { booking: booking._id, roomNumber: roomItem.roomNumber, status: 'Active' },
+            { status: 'Cancelled' }
+          );
+        } catch (roomError) {
+          console.error(`Error deallocating room number ${roomItem.roomNumber}:`, roomError);
+        }
       }
     }
+
+    // Safety net: ensure ALL remaining Active allocations for this booking are cancelled
+    await RoomAllocation.updateMany(
+      { booking: booking._id, status: 'Active' },
+      { status: 'Cancelled' }
+    );
 
     await booking.save();
 
@@ -1090,56 +1180,41 @@ const cancelBooking = async (req, res) => {
     }
 
     // Create notification in database and emit socket event via controller
-    try {
-      const room = await Room.findById(booking.room);
-      if (room && typeof createRoomBookingNotification === 'function') {
-        // Track which users have been notified to prevent duplicates
-        const bookingOwnerId = booking.user.toString();
-        const notifiedUserIds = new Set();
+    const mainRoomType = booking.rooms[0]?.roomType;
+    if (mainRoomType && typeof createRoomBookingNotification === 'function') {
+      const bookingOwnerId = booking.user.toString();
+      const notifiedUserIds = new Set();
 
-        // 1. Notify the booking owner (User)
-        await createRoomBookingNotification(
-          bookingOwnerId,
-          { booking, room, status: 'Cancelled' },
-          req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
-        );
-        notifiedUserIds.add(bookingOwnerId);
+      await createRoomBookingNotification(
+        bookingOwnerId,
+        { booking, room: mainRoomType, status: 'Cancelled' },
+        req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
+      );
+      notifiedUserIds.add(bookingOwnerId);
 
-        // 2. If User cancelled, also notify ALL Admins (but skip if already notified)
-        if (req.user.role !== 'admin') {
-          const admins = await User.find({ role: 'admin' });
-          if (admins && admins.length > 0) {
-            for (const admin of admins) {
-              const adminId = admin._id.toString();
+      if (req.user.role !== 'admin') {
+        const admins = await User.find({ role: 'admin' });
+        if (admins && admins.length > 0) {
+          for (const admin of admins) {
+            const adminId = admin._id.toString();
+            if (notifiedUserIds.has(adminId)) continue;
 
-              // Skip if this admin has already been notified (e.g., they are the booking owner)
-              if (notifiedUserIds.has(adminId)) {
-                console.log(`Skipping duplicate notification for admin ${adminId} (already notified as booking owner)`);
-                continue;
-              }
-
-              try {
-                await createRoomBookingNotification(
-                  admin._id,
-                  { booking, room, status: 'Cancelled' },
-                  'cancelled_by_user'
-                );
-                notifiedUserIds.add(adminId);
-              } catch (err) { console.error(`Failed to notify admin ${admin._id}`, err); }
-            }
+            try {
+              await createRoomBookingNotification(
+                admin._id,
+                { booking, room: mainRoomType, status: 'Cancelled' },
+                'cancelled_by_user'
+              );
+              notifiedUserIds.add(adminId);
+            } catch (err) { console.error(`Failed to notify admin ${admin._id}`, err); }
           }
         }
       }
-      console.log('Notifications sent successfully');
-
-      // Emit socket event for admin dashboard update
-      emitBookingStatusChange(booking.bookingId, 'Cancelled', booking.user.toString());
-
-    } catch (notificationError) {
-      console.error("Notification creation error:", notificationError);
     }
+    console.log('Notifications sent successfully');
 
-    console.log('Cancel booking completed successfully');
+    emitBookingStatusChange(booking.bookingId, 'Cancelled', booking.user.toString());
+
     res.status(200).json({
       success: true,
       data: booking,
@@ -1147,22 +1222,87 @@ const cancelBooking = async (req, res) => {
     });
   } catch (error) {
     console.error("Cancel booking error:", error);
-    console.error("Error stack:", error.stack);
-
-    // Provide more specific error messages
-    let errorMessage = "Server Error";
-    if (error.name === 'ValidationError') {
-      errorMessage = "Validation Error: " + error.message;
-    } else if (error.name === 'CastError') {
-      errorMessage = "Invalid booking ID format";
-    } else if (error.message) {
-      errorMessage = error.message;
-    }
-
     res.status(500).json({
       success: false,
-      message: errorMessage,
+      message: error.message || "Server Error",
     });
+  }
+};
+
+// @desc    Partial cancel booking (cancel specific rooms)
+// @route   PUT /api/bookings/:id/partial-cancel
+// @access  Private
+const partialCancelBooking = async (req, res) => {
+  try {
+    const { roomNumberIds, reason } = req.body; // Array of RoomNumber database IDs
+
+    if (!roomNumberIds || !Array.isArray(roomNumberIds) || roomNumberIds.length === 0) {
+      return res.status(400).json({ success: false, message: "Please provide room numbers to cancel" });
+    }
+
+    const booking = await Booking.findById(req.params.id);
+    if (!booking) {
+      return res.status(404).json({ success: false, message: "Booking not found" });
+    }
+
+    // Check ownership/admin
+    if (booking.user.toString() !== req.user.id && req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    }
+
+    // Filter out already cancelled rooms or invalid ones
+    let roomsToCancel = booking.rooms.filter(r => roomNumberIds.includes(r.roomNumber.toString()) && r.status !== 'Cancelled');
+
+    if (roomsToCancel.length === 0) {
+      return res.status(400).json({ success: false, message: "No valid active rooms found for cancellation" });
+    }
+
+    // If all rooms are being cancelled, use full cancellation logic (or handle it here)
+    const activeRoomsCount = booking.rooms.filter(r => r.status !== 'Cancelled').length;
+
+    if (roomsToCancel.length === activeRoomsCount) {
+      return cancelBooking(req, res);
+    }
+
+    // Mark rooms as cancelled in the booking record
+    booking.rooms.forEach(r => {
+      if (roomNumberIds.includes(r.roomNumber.toString())) {
+        r.status = 'Cancelled';
+      }
+    });
+
+    // Deallocate room numbers
+    const RoomAllocation = require('../models/RoomAllocation');
+    for (const roomItem of roomsToCancel) {
+      try {
+        const roomNumberDoc = await RoomNumber.findById(roomItem.roomNumber);
+        if (roomNumberDoc) {
+          await roomNumberDoc.deallocate();
+        }
+        await RoomAllocation.findOneAndUpdate(
+          { booking: booking._id, roomNumber: roomItem.roomNumber },
+          { status: 'Cancelled' }
+        );
+      } catch (err) {
+        console.error(`Error partial deallocating:`, err);
+      }
+    }
+
+    // Recalculate total amount
+    booking.calculateTotalAmount();
+    booking.status = 'PartiallyCancelled';
+
+    await booking.save();
+
+    res.status(200).json({
+      success: true,
+      data: booking,
+      message: `${roomsToCancel.length} room(s) cancelled successfully`
+    });
+
+  } catch (error) {
+    console.error("Partial cancel error:", error);
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -1172,17 +1312,13 @@ const cancelBooking = async (req, res) => {
 const confirmBooking = async (req, res) => {
   try {
     const booking = await Booking.findById(req.params.id)
-      .populate('room')
+      .populate('rooms.roomType')
       .populate('user', 'name email');
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
-    // Check if booking is in Pending status
     if (booking.status !== "Pending") {
       return res.status(400).json({
         success: false,
@@ -1190,51 +1326,37 @@ const confirmBooking = async (req, res) => {
       });
     }
 
-    // Update booking status to Confirmed
     booking.status = "Confirmed";
     await booking.save();
 
-    // Send confirmation email to customer
     try {
       const htmlMessage = generateBookingConfirmationEmail(booking);
-
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
         subject: `✅ Booking Confirmed - ${booking.bookingId} | Luxury Hotel`,
-        message: `Your booking ${booking.bookingId} has been confirmed!`, // Plain text fallback
+        message: `Your booking ${booking.bookingId} has been confirmed!`,
         html: htmlMessage,
       });
     } catch (emailError) {
       console.error("Confirmation email sending error:", emailError);
     }
 
-    // Create notification in database and emit socket event via controller
-    // Emit booking status change and notifications
     try {
-      // Create notification in database and emit socket event
+      const mainRoomType = booking.rooms[0]?.roomType;
       await createRoomBookingNotification(
         booking.user._id.toString(),
-        { booking, room: booking.room, status: 'Confirmed' },
+        { booking, room: mainRoomType, status: 'Confirmed' },
         'confirmed_by_admin'
       );
-
-      // Emit socket event for admin dashboard update
       emitBookingStatusChange(booking.bookingId, 'Confirmed', booking.user._id.toString());
-
     } catch (notificationError) {
       console.error("Notification error:", notificationError);
     }
 
-    res.status(200).json({
-      success: true,
-      data: booking,
-    });
+    res.status(200).json({ success: true, data: booking });
   } catch (error) {
     console.error("Confirm booking error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 
@@ -1247,24 +1369,17 @@ const checkInBooking = async (req, res) => {
     const { identityProof, notes } = req.body;
 
     const booking = await Booking.findById(req.params.id)
-      .populate('room')
+      .populate('rooms.roomType')
       .populate('user');
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
     if (booking.status !== "Confirmed") {
-      return res.status(400).json({
-        success: false,
-        message: "Only confirmed bookings can be checked in",
-      });
+      return res.status(400).json({ success: false, message: "Only confirmed bookings can be checked in" });
     }
 
-    // Update booking status
     booking.status = "CheckedIn";
     booking.checkInDetails = {
       actualCheckInTime: new Date(),
@@ -1273,74 +1388,52 @@ const checkInBooking = async (req, res) => {
       notes,
     };
 
-    // Update room number status to Occupied (if allocated)
-    if (booking.roomNumber) {
-      try {
-        const roomNumber = await RoomNumber.findById(booking.roomNumber);
-        if (roomNumber) {
-          await roomNumber.markOccupied(new Date());
-          console.log(`Room number ${roomNumber.roomNumber} marked as Occupied for booking ${booking.bookingId}`);
+    // Update all assigned room numbers status to Occupied
+    for (const roomItem of booking.rooms) {
+      if (roomItem.roomNumber) {
+        try {
+          const roomNumber = await RoomNumber.findById(roomItem.roomNumber);
+          if (roomNumber) {
+            await roomNumber.markOccupied(new Date());
+          }
+        } catch (err) {
+          console.error(`Error updating room status for ${roomItem.roomNumberInfo.number}:`, err);
         }
-      } catch (roomNumberError) {
-        console.error('Error updating room number status:', roomNumberError);
-        // Continue with check-in even if room number update fails
       }
     }
 
-    // Also update room type status for backward compatibility - REMOVED per user request for manual control
-    // await Room.findByIdAndUpdate(booking.room, { status: "Occupied" });
-
     await booking.save();
 
-    // Send check-in confirmation email
     try {
       const htmlMessage = generateCheckInEmail(booking, booking.checkInDetails);
-
-      const plainTextMessage = `
-Dear ${booking.guestDetails.primaryGuest.name},
-
-Welcome to Luxury Hotel! You have successfully checked in.
-
-  CHECK - IN DETAILS:
-- Booking ID: ${booking.bookingId}
-- Check -in Date: ${booking.checkInDetails.actualCheckInTime.toDateString()}
-- Check -in Time: ${booking.checkInDetails.actualCheckInTime.toLocaleTimeString()}
-- Room Type: ${booking.room.type}
-- Check - out Date: ${new Date(booking.bookingDates.checkOutDate).toDateString()}
-
-IMPORTANT INFORMATION:
-- WiFi Network: LuxuryHotel_Guest
-  - WiFi Password: Welcome2024
-    - Check - out Time: 11:00 AM
-      - Concierge: Dial 0 from your room
-        - Room Service: Available 24 / 7 - Dial 1
-
-We hope you enjoy your stay with us!
-
-Best regards,
-  Luxury Hotel Team
-      `;
-
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
         subject: `Welcome! Check - In Confirmed - ${booking.bookingId} | Luxury Hotel`,
-        message: plainTextMessage,
+        message: `Welcome to Luxury Hotel! You have successfully checked in.`,
         html: htmlMessage,
       });
     } catch (emailError) {
       console.error("Check-in email sending error:", emailError);
     }
 
-    res.status(200).json({
-      success: true,
-      data: booking,
-    });
+    // Create notification and emit socket event for check-in
+    try {
+      const userId = booking.user._id ? booking.user._id.toString() : booking.user.toString();
+      const mainRoomType = booking.rooms[0]?.roomType;
+      await createRoomBookingNotification(
+        userId,
+        { booking, room: mainRoomType, rooms: booking.rooms, status: 'CheckedIn' },
+        'checked_in'
+      );
+      emitBookingStatusChange(booking.bookingId, 'CheckedIn', userId);
+    } catch (notificationError) {
+      console.error("Check-in notification error:", notificationError);
+    }
+
+    res.status(200).json({ success: true, data: booking });
   } catch (error) {
-    console.error("Check-in booking error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    console.error("Check-in error:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 
@@ -1352,24 +1445,17 @@ const checkOutBooking = async (req, res) => {
     const { roomCondition, additionalCharges, notes } = req.body;
 
     const booking = await Booking.findById(req.params.id)
-      .populate('room')
+      .populate('rooms.roomType')
       .populate('user');
 
     if (!booking) {
-      return res.status(404).json({
-        success: false,
-        message: "Booking not found",
-      });
+      return res.status(404).json({ success: false, message: "Booking not found" });
     }
 
     if (booking.status !== "CheckedIn") {
-      return res.status(400).json({
-        success: false,
-        message: "Only checked-in bookings can be checked out",
-      });
+      return res.status(400).json({ success: false, message: "Only checked-in bookings can be checked out" });
     }
 
-    // Update booking status
     booking.status = "CheckedOut";
     booking.checkOutDetails = {
       actualCheckOutTime: new Date(),
@@ -1379,97 +1465,70 @@ const checkOutBooking = async (req, res) => {
       notes,
     };
 
-    // Add additional charges to total if any
     if (additionalCharges && additionalCharges.length > 0) {
-      const additionalTotal = additionalCharges.reduce(
-        (sum, charge) => sum + charge.amount,
-        0
-      );
+      const additionalTotal = additionalCharges.reduce((sum, charge) => sum + charge.amount, 0);
       booking.pricing.totalAmount += additionalTotal;
     }
 
-    // Deallocate room number (make it available for new bookings)
-    if (booking.roomNumber) {
-      try {
-        const roomNumber = await RoomNumber.findById(booking.roomNumber);
-        if (roomNumber) {
-          await roomNumber.deallocate();
-          console.log(`Room number ${roomNumber.roomNumber} deallocated and made available after checkout`);
+    // Deallocate all room numbers and update RoomAllocation records
+    const RoomAllocationModel = require('../models/RoomAllocation');
+    for (const roomItem of booking.rooms) {
+      if (roomItem.roomNumber) {
+        try {
+          const roomNumber = await RoomNumber.findById(roomItem.roomNumber);
+          if (roomNumber) {
+            await roomNumber.deallocate();
+          }
+
+          // Mark the RoomAllocation record as Completed for this specific room
+          await RoomAllocationModel.findOneAndUpdate(
+            { booking: booking._id, roomNumber: roomItem.roomNumber, status: 'Active' },
+            { status: 'Completed' }
+          );
+        } catch (err) {
+          console.error(`Error deallocating room ${roomItem.roomNumberInfo?.number || roomItem.roomNumber}:`, err);
         }
-      } catch (roomNumberError) {
-        console.error('Error deallocating room number:', roomNumberError);
-        // Continue with check-out even if deallocation fails
       }
     }
 
-    // Also update room type status for backward compatibility - REMOVED per user request for manual control
-    // await Room.findByIdAndUpdate(booking.room, { status: "Available" });
+    // Also update any remaining Active allocations for this booking (safety net)
+    await RoomAllocationModel.updateMany(
+      { booking: booking._id, status: 'Active' },
+      { status: 'Completed' }
+    );
 
     await booking.save();
 
-    // Send check-out confirmation email
     try {
       const htmlMessage = generateCheckOutEmail(booking, booking.checkOutDetails);
-
-      const additionalChargesText = additionalCharges && additionalCharges.length > 0
-        ? `\nADDITIONAL CHARGES: \n${additionalCharges.map(charge => `- ${charge.type}: ${charge.description} - ₹${charge.amount.toFixed(2)}`).join('\n')} `
-        : '';
-
-      const additionalTotal = additionalCharges ? additionalCharges.reduce((sum, charge) => sum + charge.amount, 0) : 0;
-      const finalTotal = booking.pricing.totalAmount;
-
-      const plainTextMessage = `
-Dear ${booking.guestDetails.primaryGuest.name},
-
-Thank you for staying with Luxury Hotel! Your check - out has been processed successfully.
-
-  CHECK - OUT DETAILS:
-- Booking ID: ${booking.bookingId}
-- Check - out Date: ${booking.checkOutDetails.actualCheckOutTime.toDateString()}
-- Check - out Time: ${booking.checkOutDetails.actualCheckOutTime.toLocaleTimeString()}
-- Room Type: ${booking.room.type}
-- Total Nights: ${booking.bookingDates.nights}
-
-FINAL BILL SUMMARY:
-- Original Stay Amount: ₹${(finalTotal - additionalTotal).toFixed(2)}${additionalTotal > 0 ? `\n- Additional Charges: ₹${additionalTotal.toFixed(2)}` : ''}
-- Final Total: ₹${finalTotal.toFixed(2)}
-- Payment Status: ${booking.paymentStatus}${additionalChargesText}
-
-RECEIPT INFORMATION:
-This email serves as your official check - out receipt.
-For any billing inquiries, please contact our accounting department.
-
-WE VALUE YOUR FEEDBACK:
-Please take a moment to share your experience with us.
-- Review us on: Google, TripAdvisor, or our website
-  - Email feedback: feedback @luxuryhotel.com
-
-Thank you for choosing Luxury Hotel.We look forward to welcoming you back!
-
-Best regards,
-  Luxury Hotel Team
-      `;
-
       await sendEmail({
         email: booking.guestDetails.primaryGuest.email,
         subject: `🏁 Check - Out Complete - Thank You! ${booking.bookingId} | Luxury Hotel`,
-        message: plainTextMessage,
+        message: `Thank you for staying with Luxury Hotel! Your check-out has been processed.`,
         html: htmlMessage,
       });
     } catch (emailError) {
       console.error("Check-out email sending error:", emailError);
     }
 
-    res.status(200).json({
-      success: true,
-      data: booking,
-    });
+    // Create notification and emit socket event for check-out
+    try {
+      const userId = booking.user._id ? booking.user._id.toString() : booking.user.toString();
+      const mainRoomType = booking.rooms[0]?.roomType;
+      await createRoomBookingNotification(
+        userId,
+        { booking, room: mainRoomType, rooms: booking.rooms, status: 'CheckedOut' },
+        'checked_out'
+      );
+      emitBookingStatusChange(booking.bookingId, 'CheckedOut', userId);
+    } catch (notificationError) {
+      console.error("Check-out notification error:", notificationError);
+    }
+
+    res.status(200).json({ success: true, data: booking });
   } catch (error) {
-    console.error("Check-out booking error:", error);
-    res.status(500).json({
-      success: false,
-      message: "Server Error",
-    });
+    console.error("Check-out error:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
   }
 };
 
@@ -1480,13 +1539,30 @@ const createOfflineBooking = async (req, res) => {
   try {
     const {
       customerDetails, // { name, email, phone }
-      roomId,
+      roomId, // Legacy support
+      rooms: inputRooms, // [{ roomId, adults, children }]
       checkInDate,
       checkOutDate,
       guestDetails,
-      paymentDetails, // { amount, method: 'Cash'|'Card' }
+      paymentDetails, // { amount, method: 'Cash'|'Card'|'Razorpay' }
       status = 'Confirmed'
     } = req.body;
+
+    // Normalize rooms - handle either roomId or rooms array
+    let roomsToBook = [];
+    if (inputRooms && inputRooms.length > 0) {
+      roomsToBook = inputRooms;
+    } else if (roomId) {
+      roomsToBook = [{
+        roomId,
+        adults: guestDetails?.totalAdults || 1,
+        children: guestDetails?.totalChildren || 0
+      }];
+    }
+
+    if (roomsToBook.length === 0) {
+      return res.status(400).json({ success: false, message: "No rooms selected" });
+    }
 
     // 1. Find or Create User
     let user = await User.findOne({
@@ -1500,31 +1576,73 @@ const createOfflineBooking = async (req, res) => {
       const generatedPassword = Math.random().toString(36).slice(-8);
       user = await User.create({
         name: customerDetails.name,
-        email: customerDetails.email || `walkin_${Date.now()} @hotel.com`, // Fallback for walk-ins without email
+        email: customerDetails.email || `walkin_${Date.now()}@hotel.com`,
         phone: customerDetails.phone,
         password: generatedPassword,
         role: 'customer',
         authProvider: 'local',
-        isEmailVerified: true // Auto-verify since admin created
+        isEmailVerified: true
       });
-      // Optional: Send welcome email with password
-    }
-
-    // 2. Validate Room & Dates
-    const room = await Room.findById(roomId);
-    if (!room) {
-      return res.status(404).json({ success: false, message: "Room not found" });
     }
 
     const checkIn = new Date(checkInDate);
     const checkOut = new Date(checkOutDate);
     const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
-    // Calculate pricing (Simplified for offline - admin sets params or auto-calc)
-    // We reuse room pricing logic but allow admin to potentially override behavior if needed in future
-    // For now, standard calculation:
-    const roomPrice = room.getPriceForDates(checkIn, checkOut);
-    const subtotal = roomPrice;
+    // 2. Process all rooms and calculate pricing
+    let finalRooms = [];
+    let subtotal = 0;
+    let roomNames = [];
+    let roomNumberDocs = [];
+
+    for (const roomItem of roomsToBook) {
+      const room = await Room.findById(roomItem.roomId);
+      if (!room) {
+        return res.status(404).json({ success: false, message: `Room type ${roomItem.roomId} not found` });
+      }
+
+      // Find available room number excluding already selected ones
+      const allTypeRooms = await RoomNumber.find({ roomType: roomItem.roomId, isActive: true });
+      let availableRoomNumber = null;
+      for (const rn of allTypeRooms) {
+        if (!roomNumberDocs.map(d => d._id.toString()).includes(rn._id.toString())) {
+          if (await rn.isAvailableForDates(checkIn, checkOut)) {
+            availableRoomNumber = rn;
+            break;
+          }
+        }
+      }
+
+      if (!availableRoomNumber) {
+        return res.status(400).json({ success: false, message: `No available rooms of type ${room.name} for selected dates` });
+      }
+      roomNumberDocs.push(availableRoomNumber);
+
+      const roomPrice = room.getPriceForDates(checkIn, checkOut);
+      subtotal += roomPrice;
+      roomNames.push(room.name);
+
+      // Validate individual room capacity
+      if (Number(roomItem.adults) > room.capacity.adults) {
+        return res.status(400).json({ success: false, message: `Room ${room.name} exceeds max adults per room (${room.capacity.adults})` });
+      }
+      if (Number(roomItem.children) > room.capacity.children) {
+        return res.status(400).json({ success: false, message: `Room ${room.name} exceeds max children per room (${room.capacity.children})` });
+      }
+
+      finalRooms.push({
+        roomType: roomItem.roomId,
+        roomNumber: availableRoomNumber._id,
+        roomNumberInfo: {
+          number: availableRoomNumber.roomNumber,
+          floor: availableRoomNumber.floor
+        },
+        adults: Number(roomItem.adults),
+        children: Number(roomItem.children),
+        price: roomPrice,
+        status: status === 'Cancelled' ? 'Cancelled' : 'Confirmed'
+      });
+    }
 
     // Fetch dynamic GST
     const Settings = require('../models/Settings');
@@ -1536,15 +1654,15 @@ const createOfflineBooking = async (req, res) => {
     // 3. Create Booking
     const booking = await Booking.create({
       user: user._id,
-      room: roomId,
+      rooms: finalRooms,
       guestDetails: {
         primaryGuest: {
           name: customerDetails.name,
           email: customerDetails.email || user.email,
           phone: customerDetails.phone
         },
-        totalAdults: guestDetails.totalAdults || 1,
-        totalChildren: guestDetails.totalChildren || 0
+        totalAdults: guestDetails?.totalAdults || roomsToBook.reduce((acc, r) => acc + (r.adults || 0), 0),
+        totalChildren: guestDetails?.totalChildren || roomsToBook.reduce((acc, r) => acc + (r.children || 0), 0)
       },
       bookingDates: {
         checkInDate: checkIn,
@@ -1552,14 +1670,14 @@ const createOfflineBooking = async (req, res) => {
         nights
       },
       pricing: {
-        roomPrice,
+        roomPrice: subtotal,
         subtotal,
         taxes: { gst },
         totalAmount,
-        extraServices: [] // Can be added later
+        extraServices: []
       },
-      status: status, // Admin sets this (usually 'Confirmed')
-      paymentStatus: paymentDetails.method === 'Cash' ? 'Paid' : 'Pending', // Assume allocated = paid if cash? Or admin selects
+      status: status,
+      paymentStatus: paymentDetails.method === 'Cash' ? 'Paid' : 'Pending',
       paymentDetails: {
         method: paymentDetails.method,
         amount: totalAmount,
@@ -1567,68 +1685,42 @@ const createOfflineBooking = async (req, res) => {
       }
     });
 
-    // 4. Room Allocation (Auto-allocate if confirmed)
+    // 4. Room Allocation for all rooms
     if (status === 'Confirmed' || status === 'CheckedIn') {
       try {
-        const RoomNumber = require("../models/RoomNumber");
-        const availableRoomNumber = await RoomNumber.findAvailableRoom(roomId, checkIn, checkOut);
+        const now = new Date();
+        const isActiveNow = (checkIn <= now && checkOut > now);
 
-        if (availableRoomNumber) {
-          // Create Allocation Record
-          const RoomAllocation = require('../models/RoomAllocation');
+        for (let i = 0; i < finalRooms.length; i++) {
+          const roomItem = finalRooms[i];
+          const rn = roomNumberDocs[i];
+
           await RoomAllocation.create({
             booking: booking._id,
-            roomNumber: availableRoomNumber._id,
-            roomType: roomId,
+            roomNumber: rn._id,
+            roomType: roomItem.roomType,
             guestName: customerDetails.name,
             checkInDate: checkIn,
             checkOutDate: checkOut,
             status: 'Active'
           });
 
-          // Allocate logic on RoomNumber model
-          const isActiveNow = (checkIn <= new Date() && checkOut > new Date());
           if (isActiveNow) {
-            await availableRoomNumber.allocate(
+            await rn.allocate(
               booking._id,
               user._id,
               customerDetails.name,
               checkIn,
               checkOut
             );
-          }
 
-          booking.roomNumber = availableRoomNumber._id;
-          booking.roomNumberInfo = {
-            number: availableRoomNumber.roomNumber,
-            floor: availableRoomNumber.floor,
-            allocatedAt: new Date()
-          };
-          await booking.save();
-
-          // Emit real-time event for new booking
-          try {
-            const { getSocketIo } = require("../config/socket"); // Fix import path
-            const socket = getSocketIo();
-            socket.emit('newBooking', {
-              booking: booking,
-              message: `New offline booking created for ${booking.guestDetails.primaryGuest.name}`
-            });
-
-            // Emit room status update
-            if (availableRoomNumber) {
-              socket.emit('roomStatusUpdate', {
-                roomNumberId: availableRoomNumber._id,
-                status: 'Allocated',
-                bookingId: booking._id
-              });
+            if (status === 'CheckedIn') {
+              await rn.markOccupied(new Date());
             }
-          } catch (socketError) {
-            console.error("Socket emission error:", socketError);
           }
         }
-      } catch (err) {
-        console.error("Auto-allocation failed for offline booking:", err);
+      } catch (allocError) {
+        console.error("Allocation error during offline booking:", allocError);
       }
     }
 
@@ -1636,7 +1728,7 @@ const createOfflineBooking = async (req, res) => {
     emitNewBooking({
       bookingId: booking.bookingId,
       customerName: customerDetails.name,
-      roomName: room.name,
+      roomName: roomNames.join(', '),
       checkInDate: checkIn,
       checkOutDate: checkOut,
       totalAmount,
@@ -1645,30 +1737,31 @@ const createOfflineBooking = async (req, res) => {
     });
 
     // 6. Send Confirmation Email
-    try {
-      const message = `
-            Dear ${customerDetails.name},
+    if (customerDetails.email) {
+      try {
+        const message = `
+          Dear ${customerDetails.name},
 
-            Your offline booking has been successfully confirmed.
+          Your offline booking has been successfully confirmed.
 
-            Booking ID: ${booking.bookingId}
-Room: ${room.name} (${room.type})
-Check -in: ${new Date(checkIn).toLocaleDateString()}
-Check - out: ${new Date(checkOut).toLocaleDateString()}
-            Total Amount: ₹${totalAmount}
-            Payment Status: ${booking.paymentStatus}
+          Booking ID: ${booking.bookingId}
+          Rooms: ${roomNames.join(', ')}
+          Check-in: ${new Date(checkIn).toLocaleDateString()}
+          Check-out: ${new Date(checkOut).toLocaleDateString()}
+          Total Amount: ₹${totalAmount.toFixed(2)}
+          Payment Status: ${booking.paymentStatus}
 
-            Thank you for staying with us!
-  `;
+          Thank you for staying with us!
+        `;
 
-      await sendEmail({
-        email: customerDetails.email,
-        subject: `Booking Confirmed - ${booking.bookingId} `,
-        message
-      });
-    } catch (emailError) {
-      console.error("Failed to send booking confirmation email:", emailError);
-      // Continue execution, don't fail the request
+        await sendEmail({
+          email: customerDetails.email,
+          subject: `Booking Confirmed - ${booking.bookingId}`,
+          message
+        });
+      } catch (emailError) {
+        console.error("Failed to send booking confirmation email:", emailError);
+      }
     }
 
     res.status(201).json({
@@ -1692,6 +1785,7 @@ module.exports = {
   getBooking,
   updateBooking,
   cancelBooking,
+  partialCancelBooking,
   confirmBooking,
   checkInBooking,
   checkOutBooking,

@@ -136,10 +136,11 @@ const getRoomNumbers = async (req, res) => {
         let searchCheckIn, searchCheckOut;
 
         if (checkInDate && checkOutDate) {
+            // Normalize requested range to cover full days
             searchCheckIn = new Date(checkInDate);
-            searchCheckIn.setHours(23, 59, 59, 999); // Treat check-in as end of day to allow same-day turnover
+            searchCheckIn.setHours(0, 0, 0, 0); // start of requested check-in day
             searchCheckOut = new Date(checkOutDate);
-            searchCheckOut.setHours(0, 0, 0, 0); // Treated as morning checkout
+            searchCheckOut.setHours(23, 59, 59, 999); // end of requested check-out day
         } else {
             // Default to today's date to show current allocations
             const today = new Date();
@@ -158,14 +159,37 @@ const getRoomNumbers = async (req, res) => {
             checkOutDate: { $gt: searchCheckIn }
         }).populate('booking');
 
+        // Remove any allocations where checkout day equals the requested check-in day
+        // Also filter out allocations where the booking has been cancelled/checked-out/no-show
+        // (stale Active records that weren't properly updated)
+        const refinedAllocations = conflictingAllocations.filter(allocation => {
+            const allocCheckoutDay = new Date(allocation.checkOutDate);
+            allocCheckoutDay.setHours(0, 0, 0, 0);
+            if (allocCheckoutDay.getTime() === searchCheckIn.getTime()) {
+                return false; // same-day turnover is allowed
+            }
+
+            // Cross-check: if the booking is Cancelled/CheckedOut/NoShow, 
+            // this allocation should NOT be Active — auto-fix it
+            if (allocation.booking) {
+                const bookingStatus = allocation.booking.status;
+                if (['Cancelled', 'CheckedOut', 'NoShow'].includes(bookingStatus)) {
+                    // Auto-fix stale allocation (don't await, fire-and-forget)
+                    const newAllocStatus = bookingStatus === 'CheckedOut' ? 'Completed' : 'Cancelled';
+                    RoomAllocation.findByIdAndUpdate(allocation._id, { status: newAllocStatus })
+                        .catch(err => console.error('Auto-fix stale allocation error:', err));
+                    return false; // exclude from display
+                }
+            }
+
+            return true;
+        });
+
         // Create a map for quick lookup
         const allocationMap = {};
-        conflictingAllocations.forEach(allocation => {
+        refinedAllocations.forEach(allocation => {
             const roomId = allocation.roomNumber.toString();
-            // If multiple allocations overlap (shouldn't happen), pick the first one
-            if (!allocationMap[roomId]) {
-                allocationMap[roomId] = allocation;
-            }
+            allocationMap[roomId] = allocation;
         });
 
         // Compute allocation-aware status for all rooms
@@ -407,7 +431,9 @@ const allocateRoomNumber = async (req, res) => {
 
         // Check availability against RoomAllocations (Source of Truth)
         const checkIn = new Date(checkInDate);
+        checkIn.setHours(0, 0, 0, 0);
         const checkOut = new Date(checkOutDate);
+        checkOut.setHours(23, 59, 59, 999);
 
         // Find conflicting allocations
         const conflictingAllocation = await RoomAllocation.findOne({
@@ -551,10 +577,13 @@ const deallocateRoomNumber = async (req, res) => {
 
 // @desc    Get available room numbers for a room type and date range
 // @route   GET /api/room-numbers/available
+// @route   GET /api/room-numbers/available/:roomTypeId
 // @access  Public
 const getAvailableRoomNumbers = async (req, res) => {
     try {
-        const { roomTypeId, checkInDate, checkOutDate } = req.query;
+        // Accept roomTypeId from path param or query param
+        const roomTypeId = req.params.roomTypeId || req.query.roomTypeId;
+        const { checkInDate, checkOutDate } = req.query;
 
         if (!roomTypeId || !checkInDate || !checkOutDate) {
             return res.status(400).json({
@@ -563,20 +592,31 @@ const getAvailableRoomNumbers = async (req, res) => {
             });
         }
 
-        const availableCount = await RoomNumber.getAvailableCount(
-            roomTypeId,
-            new Date(checkInDate),
-            new Date(checkOutDate)
-        );
+        const checkIn = new Date(checkInDate);
+        const checkOut = new Date(checkOutDate);
+        checkIn.setHours(0, 0, 0, 0);
+        checkOut.setHours(23, 59, 59, 999);
+
+        // Find all room numbers for this room type
+        const allRoomNumbers = await RoomNumber.find({ roomType: roomTypeId });
+
+        // Filter to get only available rooms
+        const availableRoomNumbers = [];
+        for (const roomNumber of allRoomNumbers) {
+            const isAvailable = await roomNumber.isAvailableForDates(checkIn, checkOut);
+            if (isAvailable) {
+                availableRoomNumbers.push({
+                    id: roomNumber._id,
+                    roomNumber: roomNumber.roomNumber,
+                    floor: roomNumber.floor,
+                    status: roomNumber.status
+                });
+            }
+        }
 
         res.status(200).json({
             success: true,
-            data: {
-                roomTypeId,
-                checkInDate,
-                checkOutDate,
-                availableCount
-            }
+            data: availableRoomNumbers
         });
 
     } catch (error) {

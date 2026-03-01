@@ -85,7 +85,8 @@ const getDashboardStats = async (req, res) => {
         // Get recent bookings
         const recentBookings = await Booking.find()
             .populate('user', 'name email')
-            .populate('room', 'name type')
+            .populate('rooms.roomType', 'name type')
+            .populate('rooms.roomNumber', 'roomNumber floor')
             .sort({ createdAt: -1 })
             .limit(10);
 
@@ -183,7 +184,8 @@ const getAllBookings = async (req, res) => {
 
         const bookings = await Booking.find(query)
             .populate('user', 'name email phone')
-            .populate('room', 'name type roomNumber')
+            .populate('rooms.roomType', 'name type')
+            .populate('rooms.roomNumber', 'roomNumber floor')
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
@@ -220,7 +222,8 @@ const updateBookingStatus = async (req, res) => {
 
         const booking = await Booking.findById(req.params.id)
             .populate('user', 'name email')
-            .populate('room', 'name type roomNumber');
+            .populate('rooms.roomType', 'name type')
+            .populate('rooms.roomNumber', 'roomNumber floor');
 
         if (!booking) {
             return res.status(404).json({
@@ -232,40 +235,27 @@ const updateBookingStatus = async (req, res) => {
         const oldStatus = booking.status;
         booking.status = status;
 
-        // Update room status based on booking status
-        if (status === 'Confirmed' && oldStatus === 'Pending') {
-            // Mark room as reserved when booking is confirmed
-            // Note: RoomNumber status update might be needed here if we want to block specific room, 
-            // but usually specific room is assigned later or at check-in.
-            // If roomNumber is already assigned, we could mark it as Allocated.
-            if (booking.roomNumber) {
-                await RoomNumber.findByIdAndUpdate(booking.roomNumber, { status: 'Allocated' });
-            }
-        } else if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
-            if (booking.roomNumber) {
-                const roomNumber = await RoomNumber.findById(booking.roomNumber);
+        // Update room statuses based on booking status
+        for (const roomItem of booking.rooms) {
+            if (!roomItem.roomNumber) continue;
+
+            if (status === 'Confirmed' && oldStatus === 'Pending') {
+                await RoomNumber.findByIdAndUpdate(roomItem.roomNumber, { status: 'Allocated' });
+            } else if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
+                const roomNumber = await RoomNumber.findById(roomItem.roomNumber);
                 if (roomNumber) {
                     await roomNumber.markOccupied(new Date());
                 }
-            }
-        } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
-            if (booking.roomNumber) {
-                const roomNumber = await RoomNumber.findById(booking.roomNumber);
+            } else if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
+                const roomNumber = await RoomNumber.findById(roomItem.roomNumber);
                 if (roomNumber) {
                     await roomNumber.deallocate();
                 }
-            }
 
-            // Mark allocation as completed
-            await RoomAllocation.findOneAndUpdate(
-                { booking: booking._id },
-                { status: 'Completed' }
-            );
-
-        } else if (status === 'Cancelled' || status === 'NoShow') {
-            if (booking.roomNumber) {
-                // If it was allocated, we should free it
-                await RoomNumber.findByIdAndUpdate(booking.roomNumber, {
+                // Update room item status to Confirmed (means completed stay in this context)
+                roomItem.status = 'Confirmed';
+            } else if (status === 'Cancelled' || status === 'NoShow') {
+                await RoomNumber.findByIdAndUpdate(roomItem.roomNumber, {
                     status: 'Available',
                     currentAllocation: {
                         booking: null,
@@ -276,11 +266,21 @@ const updateBookingStatus = async (req, res) => {
                         allocatedAt: null
                     }
                 });
-            }
 
-            // Cancel the allocation
-            await RoomAllocation.findOneAndUpdate(
-                { booking: booking._id },
+                // Update room item status
+                roomItem.status = 'Cancelled';
+            }
+        }
+
+        // Handle RoomAllocation updates (use updateMany for multi-room bookings)
+        if (status === 'CheckedOut' && oldStatus === 'CheckedIn') {
+            await RoomAllocation.updateMany(
+                { booking: booking._id, status: 'Active' },
+                { status: 'Completed' }
+            );
+        } else if (status === 'Cancelled' || status === 'NoShow') {
+            await RoomAllocation.updateMany(
+                { booking: booking._id, status: 'Active' },
                 { status: 'Cancelled' }
             );
         }
@@ -291,7 +291,23 @@ const updateBookingStatus = async (req, res) => {
         try {
             const guestName = booking.guestDetails?.primaryGuest?.name || 'Guest';
             const guestEmail = booking.guestDetails?.primaryGuest?.email || booking.user?.email;
-            const roomName = booking.room?.name || 'Unknown Room';
+
+            // Format room summary for email subject/message
+            let roomNameSummary = '';
+            if (booking.rooms && booking.rooms.length > 0) {
+                const roomTypes = new Set();
+                booking.rooms.forEach(r => {
+                    const type = r.roomType?.name || 'Room';
+                    roomTypes.add(type);
+                });
+                roomNameSummary = Array.from(roomTypes).join(', ');
+                if (booking.rooms.length > 1) {
+                    roomNameSummary += ` (${booking.rooms.length} Rooms)`;
+                }
+            } else {
+                roomNameSummary = 'Your stay';
+            }
+
             const checkInDate = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-IN', {
                 weekday: 'long',
                 year: 'numeric',
@@ -307,6 +323,7 @@ const updateBookingStatus = async (req, res) => {
 
             let emailSubject = '';
             let emailMessage = '';
+            let htmlHtml = '';
 
             if (status === 'Confirmed' && oldStatus === 'Pending') {
                 emailSubject = `Booking Confirmed - ${booking.bookingId}`;
@@ -315,7 +332,14 @@ const updateBookingStatus = async (req, res) => {
             } else if (status === 'Cancelled') {
                 emailSubject = `Booking Cancelled - ${booking.bookingId}`;
                 emailMessage = `Your booking ${booking.bookingId} has been cancelled.`;
-                htmlHtml = generateCancellationEmail(booking);
+
+                // Calculate refund based on payment method
+                const paymentMethod = booking.paymentDetails?.method || '';
+                const isCashPayment = paymentMethod.toLowerCase() === 'cash';
+                const cancellationFee = isCashPayment ? booking.pricing.totalAmount : 0;
+                const refundAmount = isCashPayment ? 0 : booking.pricing.totalAmount;
+
+                htmlHtml = generateCancellationEmail(booking, cancellationFee, refundAmount);
             } else if (status === 'CheckedIn') {
                 emailSubject = `Welcome! Check-in Confirmed - ${booking.bookingId}`;
                 emailMessage = `You are now checked in for booking ${booking.bookingId}.`;
@@ -343,10 +367,10 @@ const updateBookingStatus = async (req, res) => {
             // Don't fail the request if email fails to send
         }
 
-        // Send in-app notifications
+        // Send in-app notifications and emit Socket.io events
         try {
             const { createRoomBookingNotification } = require('./notificationController');
-            const { emitUserNotification } = require('../config/socket');
+            const { emitBookingStatusChange, emitUserNotification } = require('../config/socket');
 
             let notificationAction = '';
             let notificationTitle = '';
@@ -374,15 +398,18 @@ const updateBookingStatus = async (req, res) => {
                 notificationMessage = `Your booking ${booking.bookingId} has been marked as no-show.`;
             }
 
-
+            const userId = booking.user._id ? booking.user._id.toString() : booking.user.toString();
 
             if (notificationAction) {
-                // Create database notification
+                // Create database notification and emit to user via socket
                 await createRoomBookingNotification(
-                    booking.user._id || booking.user,
-                    { booking, room: booking.room, status: status },
+                    userId,
+                    { booking, rooms: booking.rooms, status: status },
                     notificationAction
                 );
+
+                // Emit booking status change to admin dashboard AND user's My Bookings
+                emitBookingStatusChange(booking.bookingId, status, userId);
             }
         } catch (notificationError) {
             console.error('Notification creation error:', notificationError);
@@ -398,7 +425,7 @@ const updateBookingStatus = async (req, res) => {
         console.error('Update booking status error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server Error'
+            message: error.message || 'Server Error'
         });
     }
 };
@@ -586,10 +613,11 @@ const getRevenueAnalytics = async (req, res) => {
                     createdAt: { $gte: startDate, $lte: endDate }
                 }
             },
+            { $unwind: '$rooms' },
             {
                 $lookup: {
                     from: 'rooms',
-                    localField: 'room',
+                    localField: 'rooms.roomType',
                     foreignField: '_id',
                     as: 'roomDetails'
                 }
@@ -598,7 +626,7 @@ const getRevenueAnalytics = async (req, res) => {
             {
                 $group: {
                     _id: '$roomDetails.type',
-                    revenue: { $sum: '$pricing.totalAmount' },
+                    revenue: { $sum: '$rooms.price' },
                     bookings: { $sum: 1 }
                 }
             }
@@ -650,10 +678,11 @@ const generateReports = async (req, res) => {
                             as: 'userDetails'
                         }
                     },
+                    { $unwind: '$rooms' },
                     {
                         $lookup: {
                             from: 'rooms',
-                            localField: 'room',
+                            localField: 'rooms.roomType',
                             foreignField: '_id',
                             as: 'roomDetails'
                         }

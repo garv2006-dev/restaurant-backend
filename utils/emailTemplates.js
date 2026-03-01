@@ -194,12 +194,18 @@ const masterEmailLayout = ({
  * Booking Confirmed
  */
 const generateBookingConfirmationEmail = (booking) => {
-  const checkIn = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', {
+  const checkInDate = new Date(booking.bookingDates.checkInDate);
+  const checkOutDate = new Date(booking.bookingDates.checkOutDate);
+
+  const checkInFormatted = checkInDate.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
   });
-  const checkOut = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', {
+  const checkOutFormatted = checkOutDate.toLocaleDateString('en-GB', {
     day: '2-digit', month: 'short', year: 'numeric'
   });
+
+  const nights = booking.bookingDates.nights ||
+    Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
 
   return masterEmailLayout({
     title: 'Booking Confirmed',
@@ -207,11 +213,34 @@ const generateBookingConfirmationEmail = (booking) => {
     introMessage: 'Your reservation is now confirmed. We look forward to welcoming you to our hotel soon. Below are your booking details for your upcoming stay.',
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
-      { label: 'Room Type', value: booking.room.name || 'Executive Suite' },
-      { label: 'Check-in', value: `${checkIn} (14:00)` },
-      { label: 'Check-out', value: `${checkOut} (11:00)` }
+      { label: 'Rooms', value: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0]?.roomType?.name || 'Staying with us' },
+      { label: 'Room Numbers', value: booking.rooms.map(r => r.roomNumberInfo?.number || r.roomNumber).join(', ') },
+      { label: 'Check-in', value: `${checkInFormatted} at 2:00 PM` },
+      { label: 'Check-out', value: `${checkOutFormatted} at 11:00 AM` },
+      { label: 'Total Nights', value: `${nights} night${nights !== 1 ? 's' : ''}` }
     ],
     pricingDetails: { total: booking.pricing.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 }) },
+    messageBody: `
+      <div style="margin-top: 24px; padding: 16px; background-color: #f3f4f6; border-left: 4px solid #3b82f6; border-radius: 4px;">
+        <p style="margin: 0 0 12px 0; font-weight: 600; color: #1f2937; font-size: 14px;">
+          Hotel Timing Information
+        </p>
+        <ul style="margin: 0; padding-left: 20px; list-style-type: none;">
+          <li style="margin-bottom: 8px; font-size: 13px; color: #374151;">
+            ✓ <strong>Check-in Time:</strong> 2:00 PM (on ${checkInFormatted})
+          </li>
+          <li style="margin-bottom: 8px; font-size: 13px; color: #374151;">
+            ✓ <strong>Check-out Time:</strong> 11:00 AM (on ${checkOutFormatted})
+          </li>
+          <li style="font-size: 13px; color: #374151;">
+            ✓ <strong>Night Stay Duration:</strong> ${nights} night${nights !== 1 ? 's' : ''} - you will occupy the room(s) for ${nights} night${nights !== 1 ? 's' : ''}.
+          </li>
+        </ul>
+        <p style="margin: 12px 0 0 0; font-size: 12px; color: #6b7280; font-style: italic;">
+          <strong>Note:</strong> Check-out day morning is free for the next booking. Early check-in and late check-out are subject to availability and additional charges may apply.
+        </p>
+      </div>
+    `,
     actionButton: { text: 'Manage My Booking', url: `${baseUrl}/bookings` }
   });
 };
@@ -234,9 +263,9 @@ const generateCancellationEmail = (booking, cancellationFee = 0, refundAmount = 
     `,
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
-      { label: 'Room Type', value: booking.room.name || 'Executive Room' },
+      { label: 'Rooms', value: booking.rooms && booking.rooms.length > 0 ? (booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0]?.roomType?.name || 'Executive Room') : 'Executive Room' },
       { label: 'Dates', value: dates },
-      { label: 'Guest', value: `${booking.guestDetails.totalAdults} Adult` }
+      { label: 'Guests', value: `${booking.guestDetails.totalAdults} Adult(s)` }
     ],
     actionButton: { text: 'Book a New Stay', url: `${baseUrl}/booking` }
   });
@@ -246,6 +275,10 @@ const generateCancellationEmail = (booking, cancellationFee = 0, refundAmount = 
  * Check-In Confirmed
  */
 const generateCheckInEmail = (booking) => {
+  const checkOutDate = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+
   return masterEmailLayout({
     title: 'You are now checked in!',
     customerName: booking.guestDetails.primaryGuest.name,
@@ -253,14 +286,23 @@ const generateCheckInEmail = (booking) => {
     statusBadge: { text: '✓ Check-in Confirmed', bg: '#ecfeff', color: '#0d9488' },
     bookingDetails: [
       { label: 'Booking Reference', value: booking.bookingId },
-      { label: 'Room Category', value: booking.room.name || 'Executive Suite' },
+      { label: 'Rooms', value: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0]?.roomType?.name || 'Executive Suite' },
+      { label: 'Allocated Rooms', value: booking.rooms.map(r => r.roomNumberInfo?.number || r.roomNumber).join(', ') },
       { label: 'Check-in Date', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) },
-      { label: 'Check-out Date', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+      { label: 'Check-out Date', value: checkOutDate }
     ],
     messageBody: `
       <div style="margin-top: 32px; padding: 24px; background-color: #f9fafb; border-radius: 8px; text-align: center;">
-        <p style="margin: 0; font-style: italic; color: #4b5563; font-size: 14px;">
+        <p style="margin: 0 0 16px 0; font-style: italic; color: #4b5563; font-size: 14px;">
           "Enjoy your stay with us. If you need anything, please don't hesitate to contact our front desk by dialing 0 from your room telephone."
+        </p>
+      </div>
+      <div style="margin-top: 24px; padding: 16px; background-color: #fff3cd; border-left: 4px solid #fbbf24; border-radius: 4px;">
+        <p style="margin: 0 0 8px 0; font-weight: 600; color: #92400e; font-size: 13px;">
+          Check-out Reminder
+        </p>
+        <p style="margin: 0; font-size: 12px; color: #b45309;">
+          Please check out by <strong>11:00 AM on ${checkOutDate}</strong>. Late check-out is available upon request at the front desk (subject to availability and additional charges).
         </p>
       </div>
     `,
@@ -272,6 +314,10 @@ const generateCheckInEmail = (booking) => {
  * Thank You / Check-Out
  */
 const generateCheckOutEmail = (booking) => {
+  const checkInDate = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const checkOutDate = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const nights = booking.bookingDates.nights || Math.ceil((new Date(booking.bookingDates.checkOutDate) - new Date(booking.bookingDates.checkInDate)) / (1000 * 60 * 60 * 24));
+
   return masterEmailLayout({
     title: 'Thank You!',
     customerName: booking.guestDetails.primaryGuest.name,
@@ -279,12 +325,18 @@ const generateCheckOutEmail = (booking) => {
     statusBadge: { text: '✓ Check-out confirmed successfully', bg: '#f0fdf4', color: '#16a34a' },
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
-      { label: 'Room Type', value: booking.room.name || 'Executive Room' },
-      { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) },
-      { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
+      { label: 'Rooms', value: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0]?.roomType?.name || 'Executive Room' },
+      { label: 'Check-in', value: checkInDate },
+      { label: 'Check-out', value: checkOutDate },
+      { label: 'Total Nights', value: `${nights} night${nights !== 1 ? 's' : ''}` }
     ],
     messageBody: `
-      <div style="margin-top: 32px; text-align: center;">
+      <div style="margin-top: 24px; padding: 16px; background-color: #e0f2fe; border-left: 4px solid #0284c7; border-radius: 4px;">
+        <p style="margin: 0; font-size: 13px; color: #0c4a6e;">
+          Thank you for staying with us! Your booking for <strong>${nights} night${nights !== 1 ? 's' : ''}</strong> from <strong>${checkInDate}</strong> to <strong>${checkOutDate}</strong> has been completed.
+        </p>
+      </div>
+      <div style="margin-top: 24px; text-align: center;">
         <p style="margin: 0 0 16px 0; color: #374151; font-weight: 600; font-size: 14px;">How would you rate your experience?</p>
         <div style="margin-bottom: 24px;">
           <span style="font-size: 24px; color: #e5e7eb; margin: 0 4px;">★</span>
@@ -310,7 +362,7 @@ const generateBookingReceivedEmail = (booking) => {
     statusBadge: { text: '⏳ Pending Confirmation', bg: '#fff7ed', color: '#c2410c' },
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
-      { label: 'Room Type', value: booking.room.name || 'Standard Room' },
+      { label: 'Rooms', value: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0]?.roomType?.name || 'Standard Room' },
       { label: 'Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) },
       { label: 'Check-out', value: new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
     ],
@@ -431,7 +483,7 @@ const generateNoShowEmail = (booking) => {
     statusBadge: { text: '⚠ No-Show Recorded', bg: '#fef2f2', color: '#991b1b' },
     bookingDetails: [
       { label: 'Booking ID', value: booking.bookingId },
-      { label: 'Room Type', value: booking.room.name || 'Standard Room' },
+      { label: 'Rooms', value: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : booking.rooms[0]?.roomType?.name || 'Standard Room' },
       { label: 'Scheduled Check-in', value: new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) }
     ],
     messageBody: `

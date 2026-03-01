@@ -18,6 +18,7 @@ const {
 } = require('../controllers/roomNumberController');
 
 // Public/Internal routes
+router.get('/available/:roomTypeId', getAvailableRoomNumbers);
 router.get('/available', getAvailableRoomNumbers);
 
 // Admin/Staff routes (all require authentication)
