@@ -2,7 +2,7 @@ const Discount = require('../models/Discount');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { validateFirstTimeDiscount } = require('../services/firstTimeUserService');
-const { emitUserNotification } = require('../config/socket');
+const { emitUserNotification, emitDiscountsChange } = require('../config/socket');
 
 // @desc    Get all active discounts
 // @route   GET /api/discounts
@@ -225,6 +225,9 @@ exports.createDiscount = async (req, res) => {
     const discount = new Discount(discountData);
     await discount.save();
 
+    // Emit socket notification
+    emitDiscountsChange();
+
     // Send notification to all users about the new discount (non-blocking)
     // Only send if it's not a first-time user discount
     if (!discount.isFirstTimeUserDiscount) {
@@ -343,6 +346,9 @@ exports.updateDiscount = async (req, res) => {
     Object.assign(discount, req.body);
     await discount.save();
 
+    // Emit socket notification
+    emitDiscountsChange();
+
     res.status(200).json({
       success: true,
       message: 'Discount updated successfully',
@@ -393,6 +399,9 @@ exports.deleteDiscount = async (req, res) => {
     discount.isDeleted = true;
     discount.isActive = false; // Also deactivate it
     await discount.save();
+
+    // Emit socket notification
+    emitDiscountsChange();
 
     console.log(`[Discount] Successfully soft-deleted discount: ${discount._id}`);
 

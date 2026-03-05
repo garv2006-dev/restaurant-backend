@@ -1,4 +1,5 @@
 const Settings = require('../models/Settings');
+const { emitSettingsChange } = require('../config/socket');
 
 // @desc    Get global settings (GST, etc)
 // @route   GET /api/admin/settings
@@ -53,6 +54,9 @@ const updateSettings = async (req, res) => {
         settings.updatedAt = Date.now();
 
         await settings.save();
+
+        // Emit socket notification
+        emitSettingsChange(settings);
 
         res.status(200).json({
             success: true,

@@ -176,23 +176,41 @@ const confirmPayment = async (req, res) => {
             status: 'Completed'
         });
 
-        // Update booking
         booking.paymentStatus = 'Paid';
         booking.status = 'Confirmed';
         booking.paymentDetails = paymentDetails;
         await booking.save();
 
+        // Real-time updates
+        try {
+            const { emitBookingStatusChange, emitDashboardUpdate } = require('../config/socket');
+            const { createRoomBookingNotification } = require('./notificationController');
+
+            // Notify admin and user via socket
+            emitBookingStatusChange(booking.bookingId, 'Confirmed', booking.user._id.toString());
+            emitDashboardUpdate({ type: 'payment_confirmed', bookingId: booking.bookingId });
+
+            // Create in-app notification
+            createRoomBookingNotification(
+                booking.user._id.toString(),
+                { booking, status: 'Confirmed' },
+                'payment_completed'
+            ).catch(err => console.error('Notification error:', err));
+        } catch (socketError) {
+            console.error('Socket/Notification error:', socketError);
+        }
+
         try {
             const htmlMessage = generatePaymentConfirmationEmail(booking, paymentDetails);
 
-            await sendEmail({
+            sendEmail({
                 email: booking.guestDetails.primaryGuest.email,
                 subject: `Payment Confirmation - ${booking.bookingId}`,
                 message: `Dear ${booking.guestDetails.primaryGuest.name}, Your payment of ₹${amount} for booking ${booking.bookingId} has been confirmed.`,
                 html: htmlMessage
-            });
+            }).catch(err => console.error('Background payment email error:', err));
         } catch (emailError) {
-            console.error('Email sending error:', emailError);
+            console.error('Email preparation error:', emailError);
         }
 
         res.status(200).json({

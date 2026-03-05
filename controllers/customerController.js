@@ -1,5 +1,6 @@
 const User = require('../models/User');
 const Booking = require('../models/Booking');
+const { emitCustomersChange } = require('../config/socket');
 
 // @desc    Get all customers (users with role 'customer')
 // @route   GET /api/customers
@@ -7,10 +8,10 @@ const Booking = require('../models/Booking');
 exports.getCustomers = async (req, res) => {
   try {
     const { page = 1, limit = 10, search } = req.query;
-    
+
     // Build query
     let query = { role: 'customer' };
-    
+
     // Add search functionality
     if (search) {
       query.$or = [
@@ -45,7 +46,7 @@ exports.getCustomers = async (req, res) => {
         ]);
 
         const stats = bookingStats[0] || { totalBookings: 0, totalSpent: 0 };
-        
+
         return {
           ...customer.toObject(),
           id: customer._id, // Add id field for frontend compatibility
@@ -107,6 +108,9 @@ exports.addCustomer = async (req, res) => {
     const customerResponse = customer.toObject();
     delete customerResponse.password;
 
+    // Emit socket notification
+    emitCustomersChange();
+
     res.status(201).json({
       success: true,
       data: customerResponse,
@@ -160,6 +164,9 @@ exports.deleteCustomer = async (req, res) => {
     // Delete the customer
     await User.findByIdAndDelete(id);
     console.log('Customer deleted successfully:', customer.name);
+
+    // Emit socket notification
+    emitCustomersChange();
 
     res.status(200).json({
       success: true,

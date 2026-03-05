@@ -160,54 +160,47 @@ ReviewSchema.index({ rating: -1 });
 ReviewSchema.index({ createdAt: -1 });
 ReviewSchema.index({ reviewType: 1 });
 
-// Validation: Room must be specified
-ReviewSchema.pre('save', function(next) {
-    if (!this.room) {
-        return next(new Error('Room is required'));
-    }
-    
-    next();
-});
+// Note: room is optional — a review can exist for a booking where the room was later deleted.
 
 // Method to calculate helpful percentage
-ReviewSchema.methods.getHelpfulPercentage = function() {
+ReviewSchema.methods.getHelpfulPercentage = function () {
     const totalVotes = this.helpfulVotes.helpful + this.helpfulVotes.notHelpful;
     if (totalVotes === 0) return 0;
     return Math.round((this.helpfulVotes.helpful / totalVotes) * 100);
 };
 
 // Method to add a helpful vote
-ReviewSchema.methods.addHelpfulVote = function(userId, vote) {
+ReviewSchema.methods.addHelpfulVote = function (userId, vote) {
     // Remove existing vote from this user
     this.helpfulVotes.votedBy = this.helpfulVotes.votedBy.filter(
         v => v.user.toString() !== userId.toString()
     );
-    
+
     // Add new vote
     this.helpfulVotes.votedBy.push({ user: userId, vote });
-    
+
     // Recalculate vote counts
     this.helpfulVotes.helpful = this.helpfulVotes.votedBy.filter(v => v.vote === 'helpful').length;
     this.helpfulVotes.notHelpful = this.helpfulVotes.votedBy.filter(v => v.vote === 'notHelpful').length;
-    
+
     return this.save();
 };
 
 // Method to flag/report review
-ReviewSchema.methods.reportReview = function(userId, reason, details) {
+ReviewSchema.methods.reportReview = function (userId, reason, details) {
     this.flags.reports.push({
         reportedBy: userId,
         reason,
         details
     });
-    
+
     this.flags.isReported = true;
-    
+
     return this.save();
 };
 
 // Static method to get average ratings for a room
-ReviewSchema.statics.getAverageRating = async function(roomId) {
+ReviewSchema.statics.getAverageRating = async function (roomId) {
     const stats = await this.aggregate([
         {
             $match: {
@@ -230,7 +223,7 @@ ReviewSchema.statics.getAverageRating = async function(roomId) {
             }
         }
     ]);
-    
+
     return stats[0] || {
         averageRating: 0,
         totalReviews: 0
@@ -238,14 +231,14 @@ ReviewSchema.statics.getAverageRating = async function(roomId) {
 };
 
 // Static method to get reviews with filters
-ReviewSchema.statics.getFilteredReviews = function(filters = {}) {
+ReviewSchema.statics.getFilteredReviews = function (filters = {}) {
     let query = { isApproved: true, 'flags.isHidden': false };
-    
+
     if (filters.room) query.room = filters.room;
     if (filters.reviewType) query.reviewType = filters.reviewType;
     if (filters.rating) query.rating = filters.rating;
     if (filters.visitType) query.visitType = filters.visitType;
-    
+
     let sortBy = {};
     switch (filters.sortBy) {
         case 'newest':
@@ -266,15 +259,15 @@ ReviewSchema.statics.getFilteredReviews = function(filters = {}) {
         default:
             sortBy = { createdAt: -1 };
     }
-    
+
     return this.find(query)
         .populate('user', 'name avatar')
         .populate('room', 'name type')
-                .sort(sortBy);
+        .sort(sortBy);
 };
 
 // Update related models when review is approved
-ReviewSchema.post('save', async function() {
+ReviewSchema.post('save', async function () {
     if (this.isApproved && !this.flags.isHidden) {
         try {
             if (this.room) {

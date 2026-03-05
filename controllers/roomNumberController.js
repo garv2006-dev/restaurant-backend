@@ -2,6 +2,7 @@ const RoomNumber = require('../models/RoomNumber');
 const Room = require('../models/Room');
 const Booking = require('../models/Booking');
 const RoomAllocation = require('../models/RoomAllocation');
+const { emitRoomNumbersChange } = require('../config/socket');
 
 // @desc    Create room numbers in bulk
 // @route   POST /api/room-numbers/bulk-create
@@ -58,6 +59,11 @@ const createRoomNumbers = async (req, res) => {
             });
 
             roomNumbers.push(newRoomNumber);
+        }
+
+        // Emit socket notification
+        if (roomNumbers.length > 0) {
+            emitRoomNumbersChange();
         }
 
         res.status(201).json({
@@ -390,6 +396,9 @@ const updateRoomNumberStatus = async (req, res) => {
 
         await roomNumber.save();
 
+        // Emit socket notification
+        emitRoomNumbersChange();
+
         res.status(200).json({
             success: true,
             data: roomNumber
@@ -517,6 +526,9 @@ const allocateRoomNumber = async (req, res) => {
             await roomNumber.allocate(bookingId, customerId, customerName, checkIn, checkOut);
         }
 
+        // Emit socket notification
+        emitRoomNumbersChange();
+
         res.status(200).json({
             success: true,
             data: roomNumber,
@@ -558,6 +570,9 @@ const deallocateRoomNumber = async (req, res) => {
         }
 
         await roomNumber.deallocate();
+
+        // Emit socket notification
+        emitRoomNumbersChange();
 
         res.status(200).json({
             success: true,
@@ -668,6 +683,9 @@ const updateRoomNumber = async (req, res) => {
 
         await roomNumber.save();
 
+        // Emit socket notification
+        emitRoomNumbersChange();
+
         res.status(200).json({
             success: true,
             data: roomNumber
@@ -716,6 +734,9 @@ const deleteRoomNumber = async (req, res) => {
             // Hard delete if no history
             await roomNumber.deleteOne();
         }
+
+        // Emit socket notification
+        emitRoomNumbersChange();
 
         res.status(200).json({
             success: true,

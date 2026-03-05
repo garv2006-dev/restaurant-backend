@@ -13,6 +13,12 @@ const {
     generateCheckOutEmail,
     generateNoShowEmail
 } = require('../utils/emailTemplates');
+const {
+    emitBookingStatusChange,
+    emitNewBooking,
+    emitUsersChange,
+    emitRoomNumbersChange
+} = require('../config/socket');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -355,12 +361,12 @@ const updateBookingStatus = async (req, res) => {
             }
 
             if (htmlHtml && guestEmail) {
-                await sendEmail({
+                sendEmail({
                     email: guestEmail,
                     subject: emailSubject,
                     message: emailMessage,
                     html: htmlHtml
-                });
+                }).catch(err => console.error('Background email error:', err));
             }
         } catch (emailError) {
             console.error('Email sending error:', emailError);
@@ -369,9 +375,7 @@ const updateBookingStatus = async (req, res) => {
 
         // Send in-app notifications and emit Socket.io events
         try {
-            const { createRoomBookingNotification } = require('./notificationController');
-            const { emitBookingStatusChange, emitUserNotification } = require('../config/socket');
-
+            // Notifications and socket events are now handled by top-level imports
             let notificationAction = '';
             let notificationTitle = '';
             let notificationMessage = '';
@@ -411,6 +415,9 @@ const updateBookingStatus = async (req, res) => {
                 // Emit booking status change to admin dashboard AND user's My Bookings
                 emitBookingStatusChange(booking.bookingId, status, userId);
             }
+
+            // Emit room numbers change (check-in/out affects availability status)
+            emitRoomNumbersChange();
         } catch (notificationError) {
             console.error('Notification creation error:', notificationError);
             // Don't fail the request if notification fails
@@ -521,6 +528,9 @@ const updateUserStatus = async (req, res) => {
         }
 
         await user.save();
+
+        // Emit socket notification
+        emitUsersChange();
 
         res.status(200).json({
             success: true,
@@ -866,6 +876,9 @@ const createStaffUser = async (req, res) => {
             isEmailVerified: true // Staff accounts are pre-verified
         });
 
+        // Emit socket notification
+        emitUsersChange();
+
         res.status(201).json({
             success: true,
             data: user
@@ -984,6 +997,12 @@ const markPaymentAsPaid = async (req, res) => {
             } catch (emailError) {
                 console.error('Email sending error:', emailError);
             }
+        }
+
+        // Emit socket updates for real-time dashboard refresh
+        if (booking) {
+            emitBookingStatusChange(booking.bookingId, booking.status, booking.user.toString());
+            emitRoomNumbersChange();
         }
 
         res.status(200).json({
