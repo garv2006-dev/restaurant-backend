@@ -1,6 +1,7 @@
 const Review = require('../models/Review');
 const Booking = require('../models/Booking');
 const Room = require('../models/Room');
+const { emitNewReview, emitReviewDeleted } = require('../config/socket');
 
 // @desc    Create review
 // @route   POST /api/reviews
@@ -49,6 +50,15 @@ const createReview = async (req, res) => {
             });
         }
 
+        // Get room name for permanent storage in case room is deleted
+        let storedRoomType = reviewType;
+        if (room) {
+            const roomData = await Room.findById(room);
+            if (roomData) {
+                storedRoomType = roomData.name;
+            }
+        }
+
         const review = await Review.create({
             user: req.user.id,
             booking,
@@ -57,6 +67,7 @@ const createReview = async (req, res) => {
             title,
             comment,
             reviewType,
+            roomType: storedRoomType, // Save the actual room name
             isApproved: true,  // Auto-approve reviews
             moderatedAt: new Date(),
             moderatorNote: 'Auto-approved on submission'
@@ -67,11 +78,16 @@ const createReview = async (req, res) => {
             { path: 'room', select: 'name type' },
         ]);
 
-        // Update average rating
+        // Update average rating (room document may have been deleted)
         if (room) {
             const roomData = await Room.findById(room);
-            await roomData.updateAverageRating();
+            if (roomData) {
+                await roomData.updateAverageRating();
+            }
         }
+
+        // Emit socket notification for admin
+        emitNewReview(review);
 
         res.status(201).json({
             success: true,
@@ -126,12 +142,28 @@ const getReviews = async (req, res) => {
 
         const skip = (page - 1) * limit;
 
-        const reviews = await Review.find(query)
+        let reviews = await Review.find(query)
             .populate('user', 'name avatar')
             .populate('room', 'name type')
+            .populate({
+                path: 'booking',
+                populate: {
+                    path: 'rooms.roomType',
+                    select: 'name type'
+                }
+            })
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
+
+        // Fallback for older reviews without a direct room attached
+        reviews = reviews.map(review => {
+            const reviewObj = review.toObject();
+            if (!reviewObj.room && reviewObj.booking && reviewObj.booking.rooms && reviewObj.booking.rooms.length > 0) {
+                reviewObj.room = reviewObj.booking.rooms[0].roomType;
+            }
+            return reviewObj;
+        });
 
         const total = await Review.countDocuments(query);
 
@@ -164,12 +196,28 @@ const getMyReviews = async (req, res) => {
         const { page = 1, limit = 10 } = req.query;
         const skip = (page - 1) * limit;
 
-        const reviews = await Review.find({ user: req.user.id })
+        let reviews = await Review.find({ user: req.user.id })
             .populate('room', 'name type')
-            .populate('booking', 'bookingId')
+            .populate({
+                path: 'booking',
+                select: 'bookingId rooms',
+                populate: {
+                    path: 'rooms.roomType',
+                    select: 'name type'
+                }
+            })
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
+
+        // Fallback for older reviews without a direct room attached
+        reviews = reviews.map(review => {
+            const reviewObj = review.toObject();
+            if (!reviewObj.room && reviewObj.booking && reviewObj.booking.rooms && reviewObj.booking.rooms.length > 0) {
+                reviewObj.room = reviewObj.booking.rooms[0].roomType;
+            }
+            return reviewObj;
+        });
 
         const total = await Review.countDocuments({ user: req.user.id });
 
@@ -272,10 +320,13 @@ const deleteReview = async (req, res) => {
 
         await review.deleteOne();
 
+        // Emit socket notification
+        emitReviewDeleted(req.params.id);
+
         // Update average ratings
         if (review.room) {
             const room = await Room.findById(review.room);
-            await room.updateAverageRating();
+            if (room) await room.updateAverageRating();
         }
 
         res.status(200).json({
@@ -337,12 +388,29 @@ const getPendingReviews = async (req, res) => {
         const { page = 1, limit = 10 } = req.query;
         const skip = (page - 1) * limit;
 
-        const reviews = await Review.find({ isApproved: false })
+        let reviews = await Review.find({ isApproved: false })
             .populate('user', 'name email')
             .populate('room', 'name type')
+            .populate({
+                path: 'booking',
+                select: 'bookingId rooms',
+                populate: {
+                    path: 'rooms.roomType',
+                    select: 'name type'
+                }
+            })
             .sort({ createdAt: -1 })
             .limit(Number(limit))
             .skip(skip);
+
+        // Fallback for older reviews without a direct room attached
+        reviews = reviews.map(review => {
+            const reviewObj = review.toObject();
+            if (!reviewObj.room && reviewObj.booking && reviewObj.booking.rooms && reviewObj.booking.rooms.length > 0) {
+                reviewObj.room = reviewObj.booking.rooms[0].roomType;
+            }
+            return reviewObj;
+        });
 
         const total = await Review.countDocuments({ isApproved: false });
 

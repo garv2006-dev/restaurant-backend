@@ -37,26 +37,26 @@ const initializeSocket = (server) => {
       try {
         const { roomId, userId } = data;
         console.log(`Room lock attempt: Room ${roomId} by User ${userId}`);
-        
+
         // Broadcast to all clients on rooms page
         socket.to('rooms-page').emit('room_locked', {
           roomId,
           lockedBy: userId,
           timestamp: new Date()
         });
-        
+
         // Also emit general room update
         io.to('rooms-page').emit('room_updated', {
           roomId,
           status: 'locked',
           lockedBy: userId
         });
-        
+
       } catch (error) {
         console.error('Error handling room lock:', error);
-        socket.emit('booking_failed', { 
+        socket.emit('booking_failed', {
           message: 'Failed to lock room',
-          error: error.message 
+          error: error.message
         });
       }
     });
@@ -66,14 +66,14 @@ const initializeSocket = (server) => {
       try {
         const { roomId, userId, bookingId } = data;
         console.log(`Booking confirmed: Room ${roomId}, Booking ${bookingId}`);
-        
+
         // Broadcast to all clients
         io.to('rooms-page').emit('room_updated', {
           roomId,
           status: 'booked',
           bookingId
         });
-        
+
         // Notify admin dashboard
         io.to('admin-dashboard').emit('new_booking_confirmed', {
           roomId,
@@ -81,12 +81,12 @@ const initializeSocket = (server) => {
           bookingId,
           timestamp: new Date()
         });
-        
+
       } catch (error) {
         console.error('Error confirming booking:', error);
-        socket.emit('booking_failed', { 
+        socket.emit('booking_failed', {
           message: 'Failed to confirm booking',
-          error: error.message 
+          error: error.message
         });
       }
     });
@@ -96,14 +96,14 @@ const initializeSocket = (server) => {
       try {
         const { roomId, userId, bookingId } = data;
         console.log(`Booking cancelled: Room ${roomId}, Booking ${bookingId}`);
-        
+
         // Broadcast to all clients
         io.to('rooms-page').emit('room_updated', {
           roomId,
           status: 'available',
           bookingId: null
         });
-        
+
         // Notify admin dashboard
         io.to('admin-dashboard').emit('booking_cancelled', {
           roomId,
@@ -111,12 +111,12 @@ const initializeSocket = (server) => {
           bookingId,
           timestamp: new Date()
         });
-        
+
       } catch (error) {
         console.error('Error cancelling booking:', error);
-        socket.emit('booking_failed', { 
+        socket.emit('booking_failed', {
           message: 'Failed to cancel booking',
-          error: error.message 
+          error: error.message
         });
       }
     });
@@ -172,15 +172,15 @@ const emitBookingStatusChange = (bookingId, status, userId) => {
   try {
     const socketIo = getSocketIo();
     const data = { bookingId, status, timestamp: new Date() };
-    
+
     // Notify admin dashboard
     socketIo.to('admin-dashboard').emit('booking-status-change', data);
-    
+
     // Notify specific user
     if (userId) {
       socketIo.to(`user-${userId}`).emit('booking-status-change', data);
     }
-    
+
     console.log('Booking status change emitted:', data);
   } catch (error) {
     console.error('Error emitting booking status change:', error);
@@ -208,14 +208,14 @@ const emitRoomLocked = (roomId, userId) => {
   try {
     const socketIo = getSocketIo();
     const data = { roomId, lockedBy: userId, timestamp: new Date() };
-    
+
     socketIo.to('rooms-page').emit('room_locked', data);
     socketIo.to('rooms-page').emit('room_updated', {
       roomId,
       status: 'locked',
       lockedBy: userId
     });
-    
+
     console.log('Room lock emitted:', data);
   } catch (error) {
     console.error('Error emitting room lock:', error);
@@ -227,9 +227,9 @@ const emitRoomUnlocked = (roomId) => {
   try {
     const socketIo = getSocketIo();
     const data = { roomId, status: 'available', timestamp: new Date() };
-    
+
     socketIo.to('rooms-page').emit('room_updated', data);
-    
+
     console.log('Room unlock emitted:', data);
   } catch (error) {
     console.error('Error emitting room unlock:', error);
@@ -241,7 +241,7 @@ const emitBookingConfirmed = (roomId, bookingId, userId) => {
   try {
     const socketIo = getSocketIo();
     const data = { roomId, status: 'booked', bookingId, timestamp: new Date() };
-    
+
     socketIo.to('rooms-page').emit('room_updated', data);
     socketIo.to('admin-dashboard').emit('new_booking_confirmed', {
       roomId,
@@ -249,7 +249,7 @@ const emitBookingConfirmed = (roomId, bookingId, userId) => {
       bookingId,
       timestamp: new Date()
     });
-    
+
     console.log('Booking confirmed emitted:', data);
   } catch (error) {
     console.error('Error emitting booking confirmed:', error);
@@ -261,7 +261,7 @@ const emitBookingCancelled = (roomId, bookingId, userId) => {
   try {
     const socketIo = getSocketIo();
     const data = { roomId, status: 'available', bookingId: null, timestamp: new Date() };
-    
+
     socketIo.to('rooms-page').emit('room_updated', data);
     socketIo.to('admin-dashboard').emit('booking_cancelled', {
       roomId,
@@ -269,10 +269,99 @@ const emitBookingCancelled = (roomId, bookingId, userId) => {
       bookingId,
       timestamp: new Date()
     });
-    
+
     console.log('Booking cancelled emitted:', data);
   } catch (error) {
     console.error('Error emitting booking cancelled:', error);
+  }
+};
+
+// Emit new review notification
+const emitNewReview = (reviewData) => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('new-review', reviewData);
+    console.log('New review emitted');
+  } catch (error) {
+    console.error('Error emitting new review:', error);
+  }
+};
+
+// Emit review deletion
+const emitReviewDeleted = (reviewId) => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('review-deleted', { reviewId });
+    console.log('Review deletion emitted:', reviewId);
+  } catch (error) {
+    console.error('Error emitting review deletion:', error);
+  }
+};
+
+// Emit rooms list update
+const emitRoomsChange = () => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('rooms-change');
+    socketIo.to('rooms-page').emit('rooms-change');
+    console.log('Rooms change emitted');
+  } catch (error) {
+    console.error('Error emitting rooms change:', error);
+  }
+};
+
+// Emit customers list update
+const emitCustomersChange = () => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('customers-change');
+    console.log('Customers change emitted');
+  } catch (error) {
+    console.error('Error emitting customers change:', error);
+  }
+};
+
+// Emit room numbers list update
+const emitRoomNumbersChange = () => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('room-numbers-change');
+    console.log('Room numbers change emitted');
+  } catch (error) {
+    console.error('Error emitting room numbers change:', error);
+  }
+};
+
+// Emit settings change
+const emitSettingsChange = (settings) => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('settings-change', settings);
+    console.log('Settings change emitted');
+  } catch (error) {
+    console.error('Error emitting settings change:', error);
+  }
+};
+
+// Emit discounts list change
+const emitDiscountsChange = () => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('discounts-change');
+    console.log('Discounts change emitted');
+  } catch (error) {
+    console.error('Error emitting discounts change:', error);
+  }
+};
+
+// Emit users change
+const emitUsersChange = () => {
+  try {
+    const socketIo = getSocketIo();
+    socketIo.to('admin-dashboard').emit('users-change');
+    console.log('Users change emitted');
+  } catch (error) {
+    console.error('Error emitting users change:', error);
   }
 };
 
@@ -286,5 +375,13 @@ module.exports = {
   emitRoomLocked,
   emitRoomUnlocked,
   emitBookingConfirmed,
-  emitBookingCancelled
+  emitBookingCancelled,
+  emitNewReview,
+  emitReviewDeleted,
+  emitRoomsChange,
+  emitCustomersChange,
+  emitRoomNumbersChange,
+  emitSettingsChange,
+  emitDiscountsChange,
+  emitUsersChange
 };

@@ -19,6 +19,7 @@ const {
   emitNewBooking,
   emitBookingStatusChange,
   emitUserNotification,
+  emitRoomNumbersChange,
   getSocketIo
 } = require("../config/socket");
 const { createRoomBookingNotification } = require("./notificationController");
@@ -767,12 +768,12 @@ Best regards,
   Luxury Hotel Booking Team
       `;
 
-      await sendEmail({
+      sendEmail({
         email: guestDetails.primaryGuest.email,
         subject: `⏳ Booking Received - Pending Confirmation - ${booking.bookingId} | Luxury Hotel`,
         message: plainTextMessage,
         html: htmlMessage,
-      });
+      }).catch(err => console.error("Background createBooking email error:", err));
     } catch (emailError) {
       console.error("Email sending error:", emailError);
     }
@@ -799,6 +800,9 @@ Best regards,
         { booking, rooms: booking.rooms, status: booking.status },
         'created'
       );
+
+      // Notify admin dashboard that room occupancy has changed
+      emitRoomNumbersChange();
 
       // NOTIFY ADMINS: Find all admins and send notifications
       const admins = await User.find({ role: 'admin' });
@@ -1214,6 +1218,7 @@ const cancelBooking = async (req, res) => {
     console.log('Notifications sent successfully');
 
     emitBookingStatusChange(booking.bookingId, 'Cancelled', booking.user.toString());
+    emitRoomNumbersChange();
 
     res.status(200).json({
       success: true,

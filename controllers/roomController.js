@@ -2,6 +2,7 @@ const Room = require('../models/Room');
 const RoomNumber = require('../models/RoomNumber');
 const Booking = require('../models/Booking');
 const cloudinary = require('../utils/cloudinary');
+const { emitRoomsChange } = require('../config/socket');
 
 // @desc    Get all rooms
 // @route   GET /api/rooms
@@ -293,6 +294,9 @@ const createRoom = async (req, res) => {
             }
         }
 
+        // Emit socket notification
+        emitRoomsChange();
+
         res.status(201).json({
             success: true,
             data: room
@@ -328,6 +332,9 @@ const updateRoom = async (req, res) => {
                 message: 'Room not found'
             });
         }
+
+        // Emit socket notification
+        emitRoomsChange();
 
         res.status(200).json({
             success: true,
@@ -389,6 +396,9 @@ const deleteRoom = async (req, res) => {
 
         // Delete the room type
         await room.deleteOne();
+
+        // Emit socket notification
+        emitRoomsChange();
 
         res.status(200).json({
             success: true,

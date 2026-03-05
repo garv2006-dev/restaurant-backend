@@ -1,6 +1,7 @@
 const Room = require('../models/Room');
 const User = require('../models/User');
 const cloudinary = require('../utils/cloudinary');
+const { emitRoomsChange } = require('../config/socket');
 
 // @desc    Upload room images
 // @route   POST /api/upload/room/:id
@@ -9,7 +10,7 @@ const uploadRoomImages = async (req, res) => {
   try {
     const { id } = req.params;
     const room = await Room.findById(id);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -52,6 +53,9 @@ const uploadRoomImages = async (req, res) => {
     room.images.push(...uploadedImages);
     await room.save();
 
+    // Emit socket notification
+    emitRoomsChange();
+
     res.status(200).json({
       success: true,
       message: 'Images uploaded successfully',
@@ -77,7 +81,7 @@ const deleteRoomImage = async (req, res) => {
   try {
     const { roomId, imageId } = req.params;
     const room = await Room.findById(roomId);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -86,7 +90,7 @@ const deleteRoomImage = async (req, res) => {
     }
 
     const imageIndex = room.images.findIndex(img => img._id.toString() === imageId);
-    
+
     if (imageIndex === -1) {
       return res.status(404).json({
         success: false,
@@ -105,13 +109,16 @@ const deleteRoomImage = async (req, res) => {
 
     // Remove image from room
     room.images.splice(imageIndex, 1);
-    
+
     // If deleted image was primary and there are other images, make first one primary
     if (image.isPrimary && room.images.length > 0) {
       room.images[0].isPrimary = true;
     }
-    
+
     await room.save();
+
+    // Emit socket notification
+    emitRoomsChange();
 
     res.status(200).json({
       success: true,
@@ -134,7 +141,7 @@ const setPrimaryRoomImage = async (req, res) => {
   try {
     const { roomId, imageId } = req.params;
     const room = await Room.findById(roomId);
-    
+
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -149,7 +156,7 @@ const setPrimaryRoomImage = async (req, res) => {
 
     // Set selected image as primary
     const targetImage = room.images.find(img => img._id.toString() === imageId);
-    
+
     if (!targetImage) {
       return res.status(404).json({
         success: false,
@@ -159,6 +166,9 @@ const setPrimaryRoomImage = async (req, res) => {
 
     targetImage.isPrimary = true;
     await room.save();
+
+    // Emit socket notification
+    emitRoomsChange();
 
     res.status(200).json({
       success: true,
@@ -180,7 +190,7 @@ const setPrimaryRoomImage = async (req, res) => {
 const uploadAvatar = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -227,7 +237,7 @@ const uploadAvatar = async (req, res) => {
 const deleteAvatar = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    
+
     if (!user.avatar || user.avatar === 'avatar-default.png') {
       return res.status(400).json({
         success: false,
