@@ -105,7 +105,7 @@ const getBookingAnalytics = async (startDate, endDate) => {
 
   // Calculate occupancy rate
   const totalRooms = await Room.countDocuments({ isActive: true });
-  const totalPossibleNights = totalRooms * Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+  const totalPossibleNights = totalRooms * Math.round((new Date(endDate).setHours(0, 0, 0, 0) - new Date(startDate).setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
   const occupancyRate = totalPossibleNights > 0 ? ((stats.totalNights / totalPossibleNights) * 100).toFixed(1) : 0;
 
   return {

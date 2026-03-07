@@ -248,9 +248,13 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Calculate pricing using raw dates so that nights = checkOut - checkIn correctly
-    const roomPrice = room.getPriceForDates(rawCheckIn, rawCheckOut);
-    const nights = Math.ceil((rawCheckOut - rawCheckIn) / (1000 * 60 * 60 * 24));
+    // Calculate pricing using normalized dates so that nights = checkOut - checkIn correctly
+    const pricingCheckIn = new Date(rawCheckIn);
+    pricingCheckIn.setHours(0, 0, 0, 0);
+    const pricingCheckOut = new Date(rawCheckOut);
+    pricingCheckOut.setHours(0, 0, 0, 0);
+    const nights = Math.round((pricingCheckOut - pricingCheckIn) / (1000 * 60 * 60 * 24));
+    const roomPrice = room.getPriceForDates(pricingCheckIn, pricingCheckOut);
 
     let subtotal = roomPrice;
 
@@ -1591,8 +1595,10 @@ const createOfflineBooking = async (req, res) => {
     }
 
     const checkIn = new Date(checkInDate);
+    checkIn.setHours(0, 0, 0, 0);
     const checkOut = new Date(checkOutDate);
-    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+    checkOut.setHours(0, 0, 0, 0);
+    const nights = Math.round((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
     // 2. Process all rooms and calculate pricing
     let finalRooms = [];

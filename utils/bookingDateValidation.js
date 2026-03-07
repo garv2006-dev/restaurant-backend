@@ -53,7 +53,7 @@ const validateBookingDates = (checkInDate, checkOutDate) => {
   }
 
   // Check 4: Calculate number of nights (must be at least 1)
-  const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+  const nights = Math.round((checkOut - checkIn) / (1000 * 60 * 60 * 24));
   if (nights < 1) {
     return {
       isValid: false,

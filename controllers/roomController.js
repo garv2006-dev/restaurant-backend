@@ -201,7 +201,7 @@ const checkAvailability = async (req, res) => {
                 totalPrice: price,
                 checkIn: checkInDate,
                 checkOut: checkOutDate,
-                nights: Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24))
+                nights: Math.round((new Date(checkOutDate).setHours(0, 0, 0, 0) - new Date(checkInDate).setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24))
             }
         });
 

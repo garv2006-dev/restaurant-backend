@@ -205,7 +205,7 @@ const generateBookingConfirmationEmail = (booking) => {
   });
 
   const nights = booking.bookingDates.nights ||
-    Math.ceil((checkOutDate - checkInDate) / (1000 * 60 * 60 * 24));
+    Math.round((new Date(checkOutDate).setHours(0, 0, 0, 0) - new Date(checkInDate).setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
 
   return masterEmailLayout({
     title: 'Booking Confirmed',
@@ -316,7 +316,7 @@ const generateCheckInEmail = (booking) => {
 const generateCheckOutEmail = (booking) => {
   const checkInDate = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
   const checkOutDate = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
-  const nights = booking.bookingDates.nights || Math.ceil((new Date(booking.bookingDates.checkOutDate) - new Date(booking.bookingDates.checkInDate)) / (1000 * 60 * 60 * 24));
+  const nights = booking.bookingDates.nights || Math.round((new Date(booking.bookingDates.checkOutDate).setHours(0, 0, 0, 0) - new Date(booking.bookingDates.checkInDate).setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
 
   return masterEmailLayout({
     title: 'Thank You!',
