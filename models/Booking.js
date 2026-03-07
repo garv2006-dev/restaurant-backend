@@ -265,8 +265,10 @@ BookingSchema.pre('save', function (next) {
 
     // Calculate nights
     const checkIn = new Date(this.bookingDates.checkInDate);
+    checkIn.setHours(0, 0, 0, 0);
     const checkOut = new Date(this.bookingDates.checkOutDate);
-    this.bookingDates.nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+    checkOut.setHours(0, 0, 0, 0);
+    this.bookingDates.nights = Math.round((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
     next();
 });
@@ -301,7 +303,11 @@ BookingSchema.pre('save', function (next) {
         }
 
         // Calculate and validate nights
-        const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+        const checkInNights = new Date(checkIn);
+        checkInNights.setHours(0, 0, 0, 0);
+        const checkOutNights = new Date(checkOut);
+        checkOutNights.setHours(0, 0, 0, 0);
+        const nights = Math.round((checkOutNights - checkInNights) / (1000 * 60 * 60 * 24));
         if (nights < 1) {
             return next(new Error('Minimum 1 night required for booking'));
         }

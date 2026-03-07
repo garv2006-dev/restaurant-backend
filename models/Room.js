@@ -266,11 +266,21 @@ RoomSchema.methods.isAvailableForDates = async function (checkIn, checkOut, requ
 // Method to get price for specific dates
 RoomSchema.methods.getPriceForDates = function (checkIn, checkOut) {
     let totalPrice = 0;
-    const nights = Math.ceil((checkOut - checkIn) / (1000 * 60 * 60 * 24));
+
+    // Normalize to midnight for consistent night calculation
+    const start = new Date(checkIn);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(checkOut);
+    end.setHours(0, 0, 0, 0);
+
+    // Number of nights is the number of days between check-in and check-out
+    const nights = Math.round((end - start) / (1000 * 60 * 60 * 24));
+
+    if (nights <= 0) return 0;
 
     for (let i = 0; i < nights; i++) {
-        const currentDate = new Date(checkIn);
-        currentDate.setDate(checkIn.getDate() + i);
+        const currentDate = new Date(start);
+        currentDate.setDate(start.getDate() + i);
 
         let dailyPrice = this.price.basePrice;
 
