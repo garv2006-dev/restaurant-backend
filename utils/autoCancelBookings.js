@@ -27,11 +27,11 @@ const autoCancelExpiredBookings = async () => {
 
         console.log(`\n🔄 [Auto-Cancel] Running auto-cancel check at ${now.toISOString()}`);
 
-        // Find all bookings that are Confirmed or Pending AND check-in date is in the past
-        // These are bookings where the guest never showed up / never checked in
+        // Find all bookings that are Confirmed or Pending AND check-out date is in the past
+        // These are bookings that have effectively expired as their stay period is over
         const expiredBookings = await Booking.find({
             status: { $in: ['Confirmed', 'Pending'] },
-            'bookingDates.checkInDate': { $lt: today } // Check-in date is before today
+            'bookingDates.checkOutDate': { $lt: today } // Check-out date is before today
         }).populate('rooms.roomType').populate('user');
 
         if (expiredBookings.length === 0) {
@@ -45,7 +45,7 @@ const autoCancelExpiredBookings = async () => {
 
         for (const booking of expiredBookings) {
             try {
-                console.log(`  📋 Cancelling booking ${booking.bookingId} (Status: ${booking.status}, Check-in: ${booking.bookingDates.checkInDate.toISOString()})`);
+                console.log(`  📋 Cancelling booking ${booking.bookingId} (Status: ${booking.status}, Check-out: ${booking.bookingDates.checkOutDate.toISOString()})`);
 
                 const previousStatus = booking.status;
 
@@ -54,7 +54,7 @@ const autoCancelExpiredBookings = async () => {
                 booking.cancellationDetails = {
                     cancellationDate: new Date(),
                     cancelledBy: null, // System-initiated cancellation (no user)
-                    reason: `Auto-cancelled: Guest did not check in by ${booking.bookingDates.checkInDate.toDateString()}. Booking was in "${previousStatus}" status.`,
+                    reason: `Auto-cancelled: Stay period ended on ${booking.bookingDates.checkOutDate.toDateString()} but guest never checked in. Booking was in "${previousStatus}" status.`,
                     refundEligible: false,
                     cancellationFee: booking.pricing.totalAmount // Full amount as no-show fee
                 };
