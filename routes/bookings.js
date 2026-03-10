@@ -17,7 +17,8 @@ const {
     partialCancelBooking,
     confirmBooking,
     checkInBooking,
-    checkOutBooking
+    checkOutBooking,
+    triggerAutoAllocation
 } = require('../controllers/bookingController');
 
 // All routes require authentication
@@ -38,6 +39,7 @@ router.put('/:id/partial-cancel', partialCancelBooking);
 
 // Admin/Staff routes
 router.put('/:id/confirm', authorize('admin', 'staff'), confirmBooking);
+router.put('/:id/auto-allocate', authorize('admin', 'staff'), triggerAutoAllocation);
 router.put('/:id/checkin', authorize('admin', 'staff'), checkInBooking);
 router.put('/:id/checkout', authorize('admin', 'staff'), checkOutBooking);
 

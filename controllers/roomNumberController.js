@@ -142,18 +142,18 @@ const getRoomNumbers = async (req, res) => {
         let searchCheckIn, searchCheckOut;
 
         if (checkInDate && checkOutDate) {
-            // Normalize requested range to cover full days
+            // Normalize requested range to cover full days in UTC
             searchCheckIn = new Date(checkInDate);
-            searchCheckIn.setHours(0, 0, 0, 0); // start of requested check-in day
+            searchCheckIn.setUTCHours(0, 0, 0, 0); // start of requested check-in day
             searchCheckOut = new Date(checkOutDate);
-            searchCheckOut.setHours(23, 59, 59, 999); // end of requested check-out day
+            searchCheckOut.setUTCHours(23, 59, 59, 999); // end of requested check-out day
         } else {
-            // Default to today's date to show current allocations
+            // Default to today's date UTC to show current allocations
             const today = new Date();
             searchCheckIn = new Date(today);
-            searchCheckIn.setHours(0, 0, 0, 0);
+            searchCheckIn.setUTCHours(0, 0, 0, 0);
             searchCheckOut = new Date(today);
-            searchCheckOut.setHours(23, 59, 59, 999);
+            searchCheckOut.setUTCHours(23, 59, 59, 999);
         }
 
         // Fetch conflicting Allocations from RoomAllocation collection
@@ -161,20 +161,14 @@ const getRoomNumbers = async (req, res) => {
         const conflictingAllocations = await RoomAllocation.find({
             roomNumber: { $in: roomNumbers.map(r => r._id) },
             status: 'Active',
-            checkInDate: { $lt: searchCheckOut },
-            checkOutDate: { $gt: searchCheckIn }
+            checkInDate: { $lte: searchCheckOut },
+            checkOutDate: { $gte: searchCheckIn }
         }).populate('booking');
 
-        // Remove any allocations where checkout day equals the requested check-in day
-        // Also filter out allocations where the booking has been cancelled/checked-out/no-show
-        // (stale Active records that weren't properly updated)
-        const refinedAllocations = conflictingAllocations.filter(allocation => {
-            const allocCheckoutDay = new Date(allocation.checkOutDate);
-            allocCheckoutDay.setHours(0, 0, 0, 0);
-            if (allocCheckoutDay.getTime() === searchCheckIn.getTime()) {
-                return false; // same-day turnover is allowed
-            }
+        // Note: We use lte/gte above to catch any overlap with the searched day.
+        // For actual turnover logic (checkout day = checkin day), we refine below.
 
+        const refinedAllocations = conflictingAllocations.filter(allocation => {
             // Cross-check: if the booking is Cancelled/CheckedOut/NoShow, 
             // this allocation should NOT be Active — auto-fix it
             if (allocation.booking) {
@@ -188,6 +182,29 @@ const getRoomNumbers = async (req, res) => {
                 }
             }
 
+            // Turnover logic: if a room checks out on the EXACT same day/time 
+            // that our search starts, and we are NOT looking for "Occupancy" (who is in now),
+            // we could treat it as available.
+
+            // Fix: If the allocation's checkout day is exactly or before the search's checkin day, it's not a conflict.
+            // Also, if the allocation's checkin day is exactly or after the search's checkout day, it's not a conflict.
+            const allocCheckOutDate = new Date(allocation.checkOutDate);
+            const allocCheckInDate = new Date(allocation.checkInDate);
+            allocCheckOutDate.setUTCHours(0, 0, 0, 0);
+            allocCheckInDate.setUTCHours(0, 0, 0, 0);
+
+            const searchIn = new Date(searchCheckIn);
+            searchIn.setUTCHours(0, 0, 0, 0);
+            const searchOut = new Date(searchCheckOut);
+            searchOut.setUTCHours(0, 0, 0, 0);
+
+            if (allocCheckOutDate <= searchIn) {
+                return false; // Check out is before or on the day of search check-in
+            }
+            if (allocCheckInDate >= searchOut) {
+                return false; // Check in is after or on the day of search check-out
+            }
+
             return true;
         });
 
@@ -195,7 +212,18 @@ const getRoomNumbers = async (req, res) => {
         const allocationMap = {};
         refinedAllocations.forEach(allocation => {
             const roomId = allocation.roomNumber.toString();
-            allocationMap[roomId] = allocation;
+            // If multiple allocations exist for a room (rare but possible in date range),
+            // prioritize the one that is currently active or closest to now
+            if (!allocationMap[roomId]) {
+                allocationMap[roomId] = allocation;
+            } else {
+                const existing = allocationMap[roomId];
+                const now = new Date();
+                // If this one is "now", prefer it
+                if (allocation.checkInDate <= now && allocation.checkOutDate >= now) {
+                    allocationMap[roomId] = allocation;
+                }
+            }
         });
 
         // Compute allocation-aware status for all rooms
@@ -228,11 +256,11 @@ const getRoomNumbers = async (req, res) => {
                 roomObj.showCustomerDetails = false;
             } else if (conflictingAllocation) {
                 // Found an allocation intersection
-                roomObj.dateWiseStatus = 'Allocated';
-
-                // Check if actually occupied (checked in)
+                // Priority 3: Check actually occupied status (CheckedIn)
                 if (conflictingAllocation.booking && conflictingAllocation.booking.status === 'CheckedIn') {
                     roomObj.dateWiseStatus = 'Occupied';
+                } else if (conflictingAllocation.status === 'Active') {
+                    roomObj.dateWiseStatus = 'Allocated';
                 }
 
                 roomObj.showCustomerDetails = true;
@@ -440,17 +468,17 @@ const allocateRoomNumber = async (req, res) => {
 
         // Check availability against RoomAllocations (Source of Truth)
         const checkIn = new Date(checkInDate);
-        checkIn.setHours(0, 0, 0, 0);
+        checkIn.setUTCHours(0, 0, 0, 0);
         const checkOut = new Date(checkOutDate);
-        checkOut.setHours(23, 59, 59, 999);
+        checkOut.setUTCHours(23, 59, 59, 999);
 
         // Find conflicting allocations
         const conflictingAllocation = await RoomAllocation.findOne({
             roomNumber: roomNumber._id,
             status: 'Active',
             booking: { $ne: bookingId }, // Exclude current booking if we are updating it (re-allocation)
-            checkInDate: { $lt: checkOut },
-            checkOutDate: { $gt: checkIn }
+            checkInDate: { $lte: checkOut },
+            checkOutDate: { $gte: checkIn }
         }).populate('booking');
 
         if (conflictingAllocation) {
@@ -473,10 +501,18 @@ const allocateRoomNumber = async (req, res) => {
         }
 
         // Create or Update RoomAllocation
-        // First check if there is arguably an existing allocation for this booking to update
+        // For multi-room bookings, we look for an allocation for this SPECIFIC room number first, 
+        // or any active allocation for this booking that we want to "re-allocate"
         let existingAllocation = null;
         if (bookingId) {
-            existingAllocation = await RoomAllocation.findOne({ booking: bookingId });
+            existingAllocation = await RoomAllocation.findOne({
+                booking: bookingId,
+                status: 'Active',
+                $or: [
+                    { roomNumber: roomNumber._id },
+                    { roomType: roomNumber.roomType }
+                ]
+            });
         }
 
         if (existingAllocation) {
@@ -503,23 +539,40 @@ const allocateRoomNumber = async (req, res) => {
 
         // Proceed to Update Booking
         if (bookingId) {
-            await Booking.findByIdAndUpdate(bookingId, {
-                roomNumber: roomNumber._id,
-                status: 'Confirmed', // Ensure status is confirmed
-                roomNumberInfo: {
-                    number: roomNumber.roomNumber,
-                    floor: roomNumber.floor,
-                    allocatedAt: new Date()
+            const booking = await Booking.findById(bookingId);
+            if (booking) {
+                // Find the first room of this type in the booking that hasn't been allocated 
+                // OR matches this room number if we're re-allocating
+                let roomItem = booking.rooms.find(r =>
+                    r.roomType.toString() === roomNumber.roomType.toString() &&
+                    (r.roomNumber?.toString() === roomNumber._id.toString() || !r.roomNumber)
+                );
+
+                // If none found by type+number, just take the first unallocated of this type
+                if (!roomItem) {
+                    roomItem = booking.rooms.find(r =>
+                        r.roomType.toString() === roomNumber.roomType.toString() && !r.roomNumber
+                    );
                 }
-            });
+
+                if (roomItem) {
+                    roomItem.roomNumber = roomNumber._id;
+                    roomItem.roomNumberInfo = {
+                        number: roomNumber.roomNumber,
+                        floor: roomNumber.floor,
+                        allocatedAt: new Date()
+                    };
+                    await booking.save();
+                } else {
+                    // Legacy support or fallback: update root if field exists (unlikely given current schema)
+                    // We'll skip root-level update as it's not in our schema and cause confusion
+                }
+            }
         }
 
         // Determine if we should update the RoomNumber's status (Is this allocation ACTIVE NOW?)
-        // If checkIn <= Today AND checkOut > Today
-        const today = new Date();
-        const todayStart = new Date(today.setHours(0, 0, 0, 0));
-
-        const isActiveNow = (checkIn <= new Date() && checkOut > todayStart);
+        const now = new Date();
+        const isActiveNow = (checkIn <= now && checkOut >= now);
 
         if (isActiveNow) {
             // It's a current allocation, update the room status
@@ -528,6 +581,7 @@ const allocateRoomNumber = async (req, res) => {
 
         // Emit socket notification
         emitRoomNumbersChange();
+        emitBookingStatusChange(); // Also notify bookings list
 
         res.status(200).json({
             success: true,

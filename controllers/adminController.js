@@ -19,6 +19,7 @@ const {
     emitUsersChange,
     emitRoomNumbersChange
 } = require('../config/socket');
+const { createRoomBookingNotification } = require('./notificationController');
 
 // @desc    Get admin dashboard stats
 // @route   GET /api/admin/dashboard
@@ -376,6 +377,7 @@ const updateBookingStatus = async (req, res) => {
         // Send in-app notifications and emit Socket.io events
         try {
             // Notifications and socket events are now handled by top-level imports
+            console.log(`Booking ${booking.bookingId} status updated from ${oldStatus} to ${status}`);
             let notificationAction = '';
             let notificationTitle = '';
             let notificationMessage = '';
@@ -403,6 +405,7 @@ const updateBookingStatus = async (req, res) => {
             }
 
             const userId = booking.user._id ? booking.user._id.toString() : booking.user.toString();
+            console.log(`Attempting to send notification to user ${userId} for action ${notificationAction}`);
 
             if (notificationAction) {
                 // Create database notification and emit to user via socket
@@ -411,16 +414,19 @@ const updateBookingStatus = async (req, res) => {
                     { booking, rooms: booking.rooms, status: status },
                     notificationAction
                 );
+                console.log(`Notification sent successfully to user ${userId}`);
 
                 // Emit booking status change to admin dashboard AND user's My Bookings
                 emitBookingStatusChange(booking.bookingId, status, userId);
+            } else {
+                console.log(`No notification action determined for status ${status} and oldStatus ${oldStatus}`);
             }
 
             // Emit room numbers change (check-in/out affects availability status)
             emitRoomNumbersChange();
         } catch (notificationError) {
-            console.error('Notification creation error:', notificationError);
-            // Don't fail the request if notification fails
+            console.error('Notification logic error:', notificationError);
+            // Don't fail the request if notification logic fails
         }
 
         res.status(200).json({
