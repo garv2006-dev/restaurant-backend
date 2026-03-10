@@ -249,22 +249,22 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
 
 
         // Check if notification already exists BEFORE creating
-        // Check by both bookingStatus AND title to prevent race conditions
+        // Only skip if BOTH title and bookingStatus match for this booking
         const existingNotification = await Notification.findOne({
             userId,
             type: 'room_booking',
             relatedRoomBookingId: booking._id,
-            $or: [
-                { bookingStatus },
-                { title }
-            ]
+            title,
+            bookingStatus
         }).maxTimeMS(3000).lean();
 
         // Only create and emit if notification doesn't exist
         if (existingNotification) {
-            console.log(`Notification already exists for booking ${booking.bookingId} with status ${bookingStatus} or title "${title}", skipping creation and socket emit`);
+            console.log(`Notification already exists for booking ${booking.bookingId} with status ${bookingStatus} AND title "${title}", skipping creation and socket emit`);
             return existingNotification;
         }
+
+        console.log(`Creating NEW notification for user ${userId}: ${title} (${action})`);
 
         // Create new notification
         const notification = await Notification.create({

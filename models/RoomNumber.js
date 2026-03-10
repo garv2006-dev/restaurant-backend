@@ -148,6 +148,16 @@ RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut
             // same-day turnover is allowed
             continue;
         }
+
+        const allocCheckInDay = new Date(alloc.checkInDate);
+        allocCheckInDay.setHours(0, 0, 0, 0);
+        const normalizedCheckOutDay = new Date(normalizedCheckOut);
+        normalizedCheckOutDay.setHours(0, 0, 0, 0);
+        if (allocCheckInDay.getTime() === normalizedCheckOutDay.getTime()) {
+            // same-day turnover is allowed in reverse
+            continue;
+        }
+
         // any other allocation constitutes a conflict
         return false;
     }
@@ -218,9 +228,9 @@ RoomNumberSchema.methods.markOccupied = async function (actualCheckInTime) {
 // Static method to find available room for a room type and date range
 RoomNumberSchema.statics.findAvailableRoom = async function (roomTypeId, checkInDate, checkOutDate) {
     const checkIn = new Date(checkInDate);
-    checkIn.setHours(0, 0, 0, 0);
+    checkIn.setUTCHours(0, 0, 0, 0);
     const checkOut = new Date(checkOutDate);
-    checkOut.setHours(23, 59, 59, 999);
+    checkOut.setUTCHours(23, 59, 59, 999);
 
     // Find all active rooms of this type
     // We fetch ALL because filtering by availability needs async check against RoomAllocation
@@ -242,9 +252,9 @@ RoomNumberSchema.statics.findAvailableRoom = async function (roomTypeId, checkIn
 // Static method to get available room count for a room type and date range
 RoomNumberSchema.statics.getAvailableCount = async function (roomTypeId, checkInDate, checkOutDate) {
     const checkIn = new Date(checkInDate);
-    checkIn.setHours(0, 0, 0, 0);
+    checkIn.setUTCHours(0, 0, 0, 0);
     const checkOut = new Date(checkOutDate);
-    checkOut.setHours(23, 59, 59, 999);
+    checkOut.setUTCHours(23, 59, 59, 999);
 
     const rooms = await this.find({
         roomType: roomTypeId,

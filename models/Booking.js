@@ -19,7 +19,7 @@ const BookingSchema = new mongoose.Schema({
         roomNumber: {
             type: mongoose.Schema.ObjectId,
             ref: 'RoomNumber',
-            required: true
+            required: false // Optional to support automatic allocation later
         },
         roomNumberInfo: {
             number: String,
