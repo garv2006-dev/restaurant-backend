@@ -72,7 +72,37 @@ const updateSettings = async (req, res) => {
     }
 };
 
+// @desc    Get public settings (GST percentage only)
+// @route   GET /api/admin/settings/public
+// @access  Public
+const getPublicSettings = async (req, res) => {
+    try {
+        let settings = await Settings.findOne({ type: 'tax' }).select('gstPercentage');
+
+        if (!settings) {
+            settings = await Settings.create({
+                type: 'tax',
+                gstPercentage: 18
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                gstPercentage: settings.gstPercentage
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching public settings:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error fetching settings'
+        });
+    }
+};
+
 module.exports = {
     getSettings,
-    updateSettings
+    updateSettings,
+    getPublicSettings
 };

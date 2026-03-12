@@ -126,7 +126,8 @@ const validateDiscountForBooking = async (req, res) => {
           name: discount.name,
           description: discount.description,
           type: discount.type,
-          value: discount.value
+          value: discount.value,
+          maxDiscount: discount.maxDiscount
         },
         discountAmount,
         finalAmount,
