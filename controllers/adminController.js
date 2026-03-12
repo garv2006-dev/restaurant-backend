@@ -9,6 +9,7 @@ const sendEmail = require('../utils/sendEmail');
 const {
     generateBookingConfirmationEmail,
     generateCancellationEmail,
+    generatePartialCancellationEmail,
     generateCheckInEmail,
     generateCheckOutEmail,
     generateNoShowEmail
@@ -244,9 +245,9 @@ const updateBookingStatus = async (req, res) => {
 
         // Update room statuses based on booking status
         for (const roomItem of booking.rooms) {
-            if (!roomItem.roomNumber) continue;
+            if (!roomItem.roomNumber || roomItem.status === 'Cancelled') continue;
 
-            if (status === 'Confirmed' && oldStatus === 'Pending') {
+            if (status === 'Confirmed' && (oldStatus === 'Pending' || oldStatus === 'PartiallyCancelled')) {
                 await RoomNumber.findByIdAndUpdate(roomItem.roomNumber, { status: 'Allocated' });
             } else if (status === 'CheckedIn' && oldStatus !== 'CheckedIn') {
                 const roomNumber = await RoomNumber.findById(roomItem.roomNumber);

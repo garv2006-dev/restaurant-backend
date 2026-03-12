@@ -495,12 +495,41 @@ const generateNoShowEmail = (booking) => {
   });
 };
 
+/**
+ * Partial Cancellation
+ */
+const generatePartialCancellationEmail = (booking, cancelledRoomsCount, activeRoomsCount) => {
+  const dates = `${new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })} — ${new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}`;
+
+  return masterEmailLayout({
+    title: 'Partial Cancellation Confirmed',
+    themeColor: 'info',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: `We have processed your request for partial cancellation. ${cancelledRoomsCount} room(s) have been cancelled, and ${activeRoomsCount} room(s) remain active in your booking.`,
+    statusBadge: { text: 'Partially Cancelled', bg: '#ffedd5', color: '#9a3412' },
+    bookingDetails: [
+      { label: 'Booking ID', value: booking.bookingId },
+      { label: 'Remaining Active Rooms', value: `${activeRoomsCount} Room(s)` },
+      { label: 'Cancelled Rooms', value: `${cancelledRoomsCount} Room(s)` },
+      { label: 'Stay Dates', value: dates }
+    ],
+    pricingDetails: { total: booking.pricing.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 }) },
+    messageBody: `
+      <p style="margin-top: 24px; font-size: 14px; color: #374151;">
+        Your updated booking total is now <strong>₹${booking.pricing.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>. The remaining rooms are still confirmed for your arrival.
+      </p>
+    `,
+    actionButton: { text: 'View Updated Booking', url: `${baseUrl}/bookings` }
+  });
+};
+
 module.exports = {
   generateBookingReceivedEmail,
   generateBookingConfirmationEmail,
   generateCheckInEmail,
   generateCheckOutEmail,
   generateCancellationEmail,
+  generatePartialCancellationEmail,
   generatePasswordResetEmail,
   generateOTPEmail,
   generatePaymentConfirmationEmail,

@@ -154,6 +154,10 @@ const BookingSchema = new mongoose.Schema({
         enum: ['Pending', 'Confirmed', 'CheckedIn', 'CheckedOut', 'Cancelled', 'PartiallyCancelled', 'NoShow'],
         default: 'Pending'
     },
+    isPartiallyCancelled: {
+        type: Boolean,
+        default: false
+    },
     paymentStatus: {
         type: String,
         enum: ['Pending', 'Paid', 'PartiallyPaid', 'Refunded', 'Failed'],

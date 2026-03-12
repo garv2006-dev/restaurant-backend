@@ -202,14 +202,18 @@ const createRoomBookingNotification = async (userId, bookingData, action) => {
                 bookingStatus = 'Confirmed';
                 break;
             case 'cancelled_by_user':
-                title = 'Booking Cancelled';
-                message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled as requested.`;
-                bookingStatus = 'Cancelled';
+                title = booking.status === 'PartiallyCancelled' ? 'Partial Cancellation' : 'Booking Cancelled';
+                message = booking.status === 'PartiallyCancelled' 
+                    ? `Your room booking ${booking.bookingId} for ${room.name} has been partially cancelled which you requested.`
+                    : `Your room booking ${booking.bookingId} for ${room.name} has been cancelled as requested.`;
+                bookingStatus = booking.status === 'PartiallyCancelled' ? 'PartiallyCancelled' : 'Cancelled';
                 break;
             case 'cancelled_by_admin':
-                title = 'Booking Cancelled by Admin';
-                message = `Your room booking ${booking.bookingId} for ${room.name} has been cancelled by our administrator. Please contact support for details.`;
-                bookingStatus = 'Cancelled';
+                title = booking.status === 'PartiallyCancelled' ? 'Partial Cancellation by Admin' : 'Booking Cancelled by Admin';
+                message = booking.status === 'PartiallyCancelled'
+                    ? `Your room booking ${booking.bookingId} for ${room.name} has been partially cancelled by our administrator.`
+                    : `Your room booking ${booking.bookingId} for ${room.name} has been cancelled by our administrator. Please contact support for details.`;
+                bookingStatus = booking.status === 'PartiallyCancelled' ? 'PartiallyCancelled' : 'Cancelled';
                 break;
             case 'checked_in':
                 title = 'Check-in Completed';
