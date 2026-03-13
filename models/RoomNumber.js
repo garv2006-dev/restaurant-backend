@@ -113,9 +113,9 @@ RoomNumberSchema.index({ roomNumber: 1, roomType: 1 }, { unique: true });
 RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut) {
     // Normalize dates to day boundaries for consistent overlap checking
     const normalizedCheckIn = new Date(checkIn);
-    normalizedCheckIn.setHours(0, 0, 0, 0);
+    normalizedCheckIn.setUTCHours(0, 0, 0, 0);
     const normalizedCheckOut = new Date(checkOut);
-    normalizedCheckOut.setHours(23, 59, 59, 999);
+    normalizedCheckOut.setUTCHours(23, 59, 59, 999);
 
     // Check strict manual status
     if (this.status === 'Maintenance' || this.status === 'Out of Service') {
@@ -143,16 +143,16 @@ RoomNumberSchema.methods.isAvailableForDates = async function (checkIn, checkOut
     // Examine each allocation and ignore those where the existing checkout day exactly matches the new check-in day
     for (const alloc of potentialConflicts) {
         const allocCheckoutDay = new Date(alloc.checkOutDate);
-        allocCheckoutDay.setHours(0, 0, 0, 0);
+        allocCheckoutDay.setUTCHours(0, 0, 0, 0);
         if (allocCheckoutDay.getTime() === normalizedCheckIn.getTime()) {
             // same-day turnover is allowed
             continue;
         }
 
         const allocCheckInDay = new Date(alloc.checkInDate);
-        allocCheckInDay.setHours(0, 0, 0, 0);
+        allocCheckInDay.setUTCHours(0, 0, 0, 0);
         const normalizedCheckOutDay = new Date(normalizedCheckOut);
-        normalizedCheckOutDay.setHours(0, 0, 0, 0);
+        normalizedCheckOutDay.setUTCHours(0, 0, 0, 0);
         if (allocCheckInDay.getTime() === normalizedCheckOutDay.getTime()) {
             // same-day turnover is allowed in reverse
             continue;

@@ -13,7 +13,7 @@
  */
 const normalizeToMidnight = (date) => {
   const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
+  normalized.setUTCHours(0, 0, 0, 0);
   return normalized;
 };
 

@@ -663,8 +663,8 @@ const getAvailableRoomNumbers = async (req, res) => {
 
         const checkIn = new Date(checkInDate);
         const checkOut = new Date(checkOutDate);
-        checkIn.setHours(0, 0, 0, 0);
-        checkOut.setHours(23, 59, 59, 999);
+        checkIn.setUTCHours(0, 0, 0, 0);
+        checkOut.setUTCHours(23, 59, 59, 999);
 
         // Find all room numbers for this room type
         const allRoomNumbers = await RoomNumber.find({ roomType: roomTypeId });

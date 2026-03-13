@@ -23,7 +23,7 @@ const autoCancelExpiredBookings = async () => {
         const now = new Date();
         // Normalize to start of today (midnight)
         const today = new Date(now);
-        today.setHours(0, 0, 0, 0);
+        today.setUTCHours(0, 0, 0, 0);
 
         console.log(`\n🔄 [Auto-Cancel] Running auto-cancel check at ${now.toISOString()}`);
 

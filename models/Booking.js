@@ -269,9 +269,9 @@ BookingSchema.pre('save', function (next) {
 
     // Calculate nights
     const checkIn = new Date(this.bookingDates.checkInDate);
-    checkIn.setHours(0, 0, 0, 0);
+    checkIn.setUTCHours(0, 0, 0, 0);
     const checkOut = new Date(this.bookingDates.checkOutDate);
-    checkOut.setHours(0, 0, 0, 0);
+    checkOut.setUTCHours(0, 0, 0, 0);
     this.bookingDates.nights = Math.round((checkOut - checkIn) / (1000 * 60 * 60 * 24));
 
     next();
@@ -284,10 +284,10 @@ BookingSchema.pre('save', function (next) {
     const checkOut = new Date(checkOutDate);
 
     // Normalize to midnight for comparison
-    checkIn.setHours(0, 0, 0, 0);
-    checkOut.setHours(0, 0, 0, 0);
+    checkIn.setUTCHours(0, 0, 0, 0);
+    checkOut.setUTCHours(0, 0, 0, 0);
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
 
     // Check 1: Check-in date cannot be in the past — ONLY for new bookings.
     // Existing bookings (status updates, etc.) must not be blocked by this rule.
@@ -308,9 +308,9 @@ BookingSchema.pre('save', function (next) {
 
         // Calculate and validate nights
         const checkInNights = new Date(checkIn);
-        checkInNights.setHours(0, 0, 0, 0);
+        checkInNights.setUTCHours(0, 0, 0, 0);
         const checkOutNights = new Date(checkOut);
-        checkOutNights.setHours(0, 0, 0, 0);
+        checkOutNights.setUTCHours(0, 0, 0, 0);
         const nights = Math.round((checkOutNights - checkInNights) / (1000 * 60 * 60 * 24));
         if (nights < 1) {
             return next(new Error('Minimum 1 night required for booking'));

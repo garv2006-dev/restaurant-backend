@@ -211,8 +211,8 @@ RoomSchema.methods.isAvailableForDates = async function (checkIn, checkOut, requ
     if (!(checkOut instanceof Date)) checkOut = new Date(checkOut);
 
     // Normalize dates to day boundaries for consistent overlap checking
-    checkIn.setHours(0, 0, 0, 0);
-    checkOut.setHours(23, 59, 59, 999);
+    checkIn.setUTCHours(0, 0, 0, 0);
+    checkOut.setUTCHours(23, 59, 59, 999);
 
     // Check-out must be after check-in
     if (checkOut <= checkIn) return false;
@@ -224,17 +224,19 @@ RoomSchema.methods.isAvailableForDates = async function (checkIn, checkOut, requ
 
     if (isInMaintenance) return false;
 
-    // Room must be active and available generally
-    if (!this.isActive || this.status !== 'Available') return false;
-
     // If concrete room numbers exist for this room type, prefer that single-source-of-truth
     const RoomNumber = mongoose.model('RoomNumber');
     const totalRoomNumbers = await RoomNumber.countDocuments({ roomType: this._id, isActive: true });
 
     if (totalRoomNumbers > 0) {
+        // Source of truth is RoomNumber availability
         const availableCount = await RoomNumber.getAvailableCount(this._id, checkIn, checkOut);
         return availableCount >= Number(requestedRooms);
     }
+
+    // Fallback: aggregate overlapping bookings for this room type (no explicit room numbers)
+    // Room must be active and available generally (only for fallback)
+    if (!this.isActive || this.status !== 'Available') return false;
 
     // Fallback: aggregate overlapping bookings for this room type (no explicit room numbers)
     const Booking = mongoose.model('Booking');
@@ -269,9 +271,9 @@ RoomSchema.methods.getPriceForDates = function (checkIn, checkOut) {
 
     // Normalize to midnight for consistent night calculation
     const start = new Date(checkIn);
-    start.setHours(0, 0, 0, 0);
+    start.setUTCHours(0, 0, 0, 0);
     const end = new Date(checkOut);
-    end.setHours(0, 0, 0, 0);
+    end.setUTCHours(0, 0, 0, 0);
 
     // Number of nights is the number of days between check-in and check-out
     const nights = Math.round((end - start) / (1000 * 60 * 60 * 24));
