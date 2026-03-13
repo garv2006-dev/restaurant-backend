@@ -26,8 +26,12 @@ const {
 
 const {
     getSettings,
-    updateSettings
+    updateSettings,
+    getPublicSettings
 } = require('../controllers/settingsController');
+
+// Public route for public settings (placed BEFORE protection)
+router.get('/settings/public', getPublicSettings);
 
 // All routes require admin authorization
 router.use(protect, authorize('admin'));

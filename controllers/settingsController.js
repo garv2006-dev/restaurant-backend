@@ -72,15 +72,18 @@ const updateSettings = async (req, res) => {
     }
 };
 
-// @desc    Get public settings (GST)
-// @route   GET /api/settings
+// @desc    Get public settings (GST percentage only)
+// @route   GET /api/admin/settings/public
 // @access  Public
 const getPublicSettings = async (req, res) => {
     try {
-        let settings = await Settings.findOne({ type: 'tax' });
+        let settings = await Settings.findOne({ type: 'tax' }).select('gstPercentage');
 
         if (!settings) {
-            settings = { gstPercentage: 18 };
+            settings = await Settings.create({
+                type: 'tax',
+                gstPercentage: 18
+            });
         }
 
         res.status(200).json({

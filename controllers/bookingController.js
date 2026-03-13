@@ -126,7 +126,8 @@ const validateDiscountForBooking = async (req, res) => {
           name: discount.name,
           description: discount.description,
           type: discount.type,
-          value: discount.value
+          value: discount.value,
+          maxDiscount: discount.maxDiscount
         },
         discountAmount,
         finalAmount,
@@ -931,9 +932,43 @@ const partialCancelBooking = async (req, res) => {
 
     // Recalculate total amount
     booking.calculateTotalAmount();
-    booking.status = 'PartiallyCancelled';
+    
+    // Set partial cancellation flag but KEEP original status (Pending, Confirmed, etc.)
+    // This allows standard dashboard actions to remain available based on primary status.
+    booking.isPartiallyCancelled = true;
 
     await booking.save();
+
+    // Send Email Notification
+    try {
+      const activeRoomsCount = booking.rooms.filter(r => r.status !== 'Cancelled').length;
+      const cancelledRoomsCount = roomsToCancel.length;
+      const htmlMessage = generatePartialCancellationEmail(booking, cancelledRoomsCount, activeRoomsCount);
+
+      await sendEmail({
+        email: booking.guestDetails.primaryGuest.email,
+        subject: `⚠️ Partial Cancellation - ${booking.bookingId} | Luxury Hotel`,
+        message: `Your booking ${booking.bookingId} has been partially cancelled. ${cancelledRoomsCount} room(s) cancelled.`,
+        html: htmlMessage,
+      });
+    } catch (emailError) {
+      console.error("Partial cancellation email error:", emailError);
+    }
+
+    // Create notification and emit socket events
+    try {
+      const mainRoomType = booking.rooms[0]?.roomType;
+      await createRoomBookingNotification(
+        booking.user.toString(),
+        { booking, room: mainRoomType, status: 'PartiallyCancelled' },
+        req.user.role === 'admin' ? 'cancelled_by_admin' : 'cancelled_by_user'
+      );
+      
+      emitBookingStatusChange(booking.bookingId, 'PartiallyCancelled', booking.user.toString());
+      emitRoomNumbersChange();
+    } catch (notifError) {
+      console.error("Partial cancellation notification error:", notifError);
+    }
 
     res.status(200).json({
       success: true,
