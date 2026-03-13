@@ -16,7 +16,7 @@ exports.getAnalyticsReport = async (req, res) => {
     const end = endDate ? new Date(endDate) : new Date();
 
     // Set end date to end of day
-    end.setHours(23, 59, 59, 999);
+    end.setUTCHours(23, 59, 59, 999);
 
     // Booking Analytics
     const bookingStats = await getBookingAnalytics(start, end);
@@ -105,7 +105,7 @@ const getBookingAnalytics = async (startDate, endDate) => {
 
   // Calculate occupancy rate
   const totalRooms = await Room.countDocuments({ isActive: true });
-  const totalPossibleNights = totalRooms * Math.round((new Date(endDate).setHours(0, 0, 0, 0) - new Date(startDate).setHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
+  const totalPossibleNights = totalRooms * Math.round((new Date(endDate).setUTCHours(0, 0, 0, 0) - new Date(startDate).setUTCHours(0, 0, 0, 0)) / (1000 * 60 * 60 * 24));
   const occupancyRate = totalPossibleNights > 0 ? ((stats.totalNights / totalPossibleNights) * 100).toFixed(1) : 0;
 
   return {
@@ -411,7 +411,7 @@ exports.exportReport = async (req, res) => {
 exports.getLiveDashboard = async (req, res) => {
   try {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    today.setUTCHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
