@@ -95,7 +95,7 @@ exports.validateDiscount = async (req, res) => {
         isApplicable = false;
         return res.status(400).json({
           success: false,
-          message: `Minimum order amount of ₹${discount.minimumOrderAmount} required`
+          message: `This code only applies to orders of ₹${discount.minimumOrderAmount} or more.`
         });
       }
 
@@ -103,7 +103,7 @@ exports.validateDiscount = async (req, res) => {
         isApplicable = false;
         return res.status(400).json({
           success: false,
-          message: `Maximum order amount of ₹${discount.maximumOrderAmount} exceeded`
+          message: `This code is only valid for orders up to ₹${discount.maximumOrderAmount}.`
         });
       }
 
@@ -281,7 +281,24 @@ const sendNewDiscountNotificationToAllUsers = async (discount) => {
       : `₹${discount.value}`;
 
     const title = '🎁 New Discount Available!';
-    const message = `Use code ${discount.code} to get ${discountValue} off. ${discount.description}`;
+    let message = `Use code ${discount.code} to get ${discountValue} off.`;
+    
+    // Add constraints to message
+    const constraints = [];
+    if (discount.minimumOrderAmount > 0) {
+      constraints.push(`orders over ₹${discount.minimumOrderAmount}`);
+    }
+    if (discount.maxDiscount > 0) {
+      constraints.push(`max saving ₹${discount.maxDiscount}`);
+    }
+    
+    if (constraints.length > 0) {
+      message += ` Valid on ${constraints.join(' and ')}.`;
+    }
+    
+    if (discount.description) {
+      message += ` ${discount.description}`;
+    }
 
     // Create notifications for all users
     const notificationPromises = users.map(async (user) => {
@@ -301,6 +318,8 @@ const sendNewDiscountNotificationToAllUsers = async (discount) => {
             type: 'promotion',
             discountCode: discount.code,
             discountValue: discountValue,
+            minimumOrderAmount: discount.minimumOrderAmount,
+            maxDiscount: discount.maxDiscount,
             notificationId: notification._id,
             createdAt: notification.createdAt
           });
