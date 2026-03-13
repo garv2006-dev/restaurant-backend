@@ -91,7 +91,7 @@ const validateDiscountForBooking = async (req, res) => {
     if (subtotal < discount.minimumOrderAmount) {
       return res.status(400).json({
         success: false,
-        message: `Minimum booking amount of ₹${discount.minimumOrderAmount} required`
+        message: `This code only applies to bookings of ₹${discount.minimumOrderAmount} or more.`
       });
     }
 
@@ -99,7 +99,7 @@ const validateDiscountForBooking = async (req, res) => {
     if (discount.maximumOrderAmount && subtotal > discount.maximumOrderAmount) {
       return res.status(400).json({
         success: false,
-        message: `Maximum booking amount of ₹${discount.maximumOrderAmount} exceeded`
+        message: `This code is only valid for bookings up to ₹${discount.maximumOrderAmount}.`
       });
     }
 
@@ -267,16 +267,25 @@ const createBooking = async (req, res) => {
 
     if (discountCode) {
       const discount = await Discount.findOne({ code: discountCode.toUpperCase(), isActive: true });
-      if (discount && discount.validFrom <= new Date() && discount.validUntil >= new Date() && subtotal >= discount.minimumOrderAmount) {
-        discountAmount = discount.calculateDiscount(subtotal);
-        appliedDiscount = {
-          discountId: discount._id,
-          code: discount.code,
-          name: discount.name,
-          type: discount.type,
-          value: discount.value,
-          amount: discountAmount
-        };
+      if (discount && discount.validFrom <= new Date() && discount.validUntil >= new Date()) {
+        if (subtotal < discount.minimumOrderAmount) {
+          // If called during booking creation, we still want to apply if it passes, 
+          // but if it fails we don't apply it.
+          // No error returned here as it's often a silent check during creation if code was pre-filled
+          console.log(`Discount code ${discountCode} not applied: min amount ₹${discount.minimumOrderAmount} not met.`);
+        } else if (discount.maximumOrderAmount && subtotal > discount.maximumOrderAmount) {
+          console.log(`Discount code ${discountCode} not applied: max amount ₹${discount.maximumOrderAmount} exceeded.`);
+        } else {
+          discountAmount = discount.calculateDiscount(subtotal);
+          appliedDiscount = {
+            discountId: discount._id,
+            code: discount.code,
+            name: discount.name,
+            type: discount.type,
+            value: discount.value,
+            amount: discountAmount
+          };
+        }
       }
     }
 

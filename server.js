@@ -30,6 +30,7 @@ const uploadRoutes = require('./routes/upload');
 const customerRoutes = require('./routes/customerRoutes');
 const notificationRoutes = require('./routes/notifications');
 const contactRoutes = require('./routes/contact');
+const publicSettingsRoutes = require('./routes/publicSettings');
 
 const app = express();
 
@@ -178,6 +179,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/customers', customerRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/public-settings', publicSettingsRoutes);
 
 // 404 handler
 // app.use((req, res, next) => {
