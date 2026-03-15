@@ -7,6 +7,13 @@ const RoomSchema = new mongoose.Schema({
         trim: true,
         maxlength: [100, 'Room name cannot be more than 100 characters']
     },
+    slug: {
+        type: String,
+        required: [true, 'Please add a room slug'],
+        unique: true,
+        trim: true,
+        lowercase: true
+    },
     type: {
         type: String,
         required: [true, 'Please add a room type'],

@@ -238,26 +238,45 @@ const createRoom = async (req, res) => {
         body.features = parseIfJson(body.features);
         const roomNumbers = parseIfJson(body.roomNumbers);
 
+        // Check if slug already exists (case-insensitive check)
+        const slugToCheck = body.slug ? body.slug.toLowerCase() : '';
+        const existingSlug = await Room.findOne({ slug: slugToCheck });
+        if (existingSlug) {
+            return res.status(400).json({
+                success: false,
+                message: `Room Slug "${slugToCheck}" is already in use. Please choose a unique slug.`
+            });
+        }
+
         // First create the room without handling images so we can use its ID for Cloudinary naming
         let room = await Room.create(body);
 
         // If files were uploaded, upload them to Cloudinary and attach to the room
         if (req.files && req.files.length > 0) {
-            const uploadedImages = [];
+            console.log(`🖼️ Starting parallel upload for ${req.files.length} images...`);
+            
+            try {
+                const uploadPromises = req.files.map((file, index) => 
+                    cloudinary.uploadRoomImage(file.buffer, room._id.toString(), {
+                        timeout: 60000, // 60s timeout for each image
+                        resource_type: 'image'
+                    }).then(result => ({
+                        url: result.secure_url,
+                        altText: `${body.name || 'Room'} - Image ${index + 1}`,
+                        isPrimary: index === 0
+                    }))
+                );
 
-            for (let index = 0; index < req.files.length; index++) {
-                const file = req.files[index];
-                const result = await cloudinary.uploadRoomImage(file.buffer, room._id.toString());
-
-                uploadedImages.push({
-                    url: result.secure_url,
-                    altText: `${body.name || 'Room'} - Image ${index + 1}`,
-                    isPrimary: index === 0
-                });
+                const uploadedImages = await Promise.all(uploadPromises);
+                
+                room.images = uploadedImages;
+                await room.save();
+                console.log(`✅ All ${uploadedImages.length} images uploaded and attached to room ${room._id}`);
+            } catch (uploadError) {
+                console.error('❌ Cloudinary upload failed:', uploadError);
+                // We keep the room but it will have the default placeholder assigned below
+                // This prevents the whole request from failing if just images fail
             }
-
-            room.images = uploadedImages;
-            await room.save();
         }
 
         // If still no images, ensure there is at least one placeholder image
@@ -303,8 +322,12 @@ const createRoom = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Create room error:', error);
-
+        if (error.code === 11000) {
+            return res.status(400).json({
+                success: false,
+                message: 'Room Slug already exists. Please choose a unique slug.'
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Server Error'
@@ -317,6 +340,20 @@ const createRoom = async (req, res) => {
 // @access  Private/Admin
 const updateRoom = async (req, res) => {
     try {
+        // Check if slug is being updated and if it's already in use
+        if (req.body.slug) {
+            const existingRoom = await Room.findOne({ 
+                slug: req.body.slug.toLowerCase(), 
+                _id: { $ne: req.params.id } 
+            });
+            if (existingRoom) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Room Slug "${req.body.slug}" is already in use by another room.`
+                });
+            }
+        }
+
         const room = await Room.findByIdAndUpdate(
             req.params.id,
             req.body,
@@ -342,7 +379,12 @@ const updateRoom = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Update room error:', error);
+        if (error.code === 11000) {
+            return res.status(400).json({
+                success: false,
+                message: 'Room Slug already exists. Please choose a unique slug.'
+            });
+        }
         res.status(500).json({
             success: false,
             message: 'Server Error'

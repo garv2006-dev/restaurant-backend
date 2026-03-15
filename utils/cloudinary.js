@@ -26,7 +26,7 @@ const uploadToCloudinary = (fileBuffer, folderPath, options = {}) => {
         if (error) {
           reject(error);
         } else {
-          console.log(`✅ Successfully uploaded to Cloudinary: ${result}`);
+          console.log(`✅ Successfully uploaded to Cloudinary: ${result.public_id || 'Image'}`);
           resolve(result);
         }
       }

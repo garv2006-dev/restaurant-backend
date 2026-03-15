@@ -15,22 +15,17 @@ const log = (level, message, data = {}) => {
 
 // Validate email configuration
 const validateEmailConfig = () => {
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_PASS;
+    const emailUser = process.env.SMTP_USER || process.env.EMAIL_USER;
+    const emailPass = process.env.SMTP_PASS || process.env.EMAIL_PASS;
 
     if (!emailUser || !emailPass) {
-        log('ERROR', 'EMAIL_USER or EMAIL_PASS is missing', {
+        log('ERROR', 'Email credentials missing', {
             emailUserExists: !!emailUser,
             emailPassExists: !!emailPass,
             env: process.env.NODE_ENV
         });
         return false;
     }
-
-    log('INFO', 'Email configuration validated', {
-        emailUser: emailUser.substring(0, 5) + '***',
-        nodeEnv: process.env.NODE_ENV
-    });
     return true;
 };
 
@@ -40,95 +35,107 @@ const getTransporter = () => {
         return transporter;
     }
 
-    log('INFO', 'Creating new email transporter', { service: 'gmail' });
+    const host = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const port = parseInt(process.env.SMTP_PORT || '587');
+    const secure = process.env.SMTP_SECURE === 'true'; // Usually false for 587, true for 465
+    const service = process.env.EMAIL_SERVICE; // Optional, e.g. 'gmail'
 
-    transporter = nodemailer.createTransport({
-        host: 'smtp.gmail.com',
-        service: 'gmail',
-        port: 587,
-        secure: false, // Use STARTTLS, not SSL
+    log('INFO', 'Creating new email transporter', { host, port, secure, service });
+
+    const config = {
+        host,
+        port,
+        secure,
         auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS // Must be App Password for Gmail, not regular password
+            user: process.env.SMTP_USER || process.env.EMAIL_USER,
+            pass: process.env.SMTP_PASS || process.env.EMAIL_PASS
         },
-        connectionTimeout: 1000000, // 10 seconds (User requested update)
-        socketTimeout: 1000000,     // 10 seconds
-        greetingTimeout: 1000000,
+        connectionTimeout: 10000, // 10 seconds
+        socketTimeout: 10000,
+        greetingTimeout: 10000,
         tls: {
-            rejectUnauthorized: true // For production, set to true if you have proper SSL setup
+            rejectUnauthorized: isProduction // Only strict in production
         },
         pool: {
-            maxConnections: 3,
+            maxConnections: 5,
             maxMessages: 100,
-            rateLimit: 10 // 10 messages per second
+            rateLimit: 10 
         },
-        logger: !isProduction, // Disable logger in production
-        debug: !isProduction   // Disable debug in production
-    });
+        logger: !isProduction,
+        debug: !isProduction
+    };
+
+    // If service is specified (like 'gmail'), use it to simplify config
+    if (service && !process.env.SMTP_HOST) {
+        config.service = service;
+    }
+
+    transporter = nodemailer.createTransport(config);
 
     // Test connection
     transporter.verify((error, success) => {
         if (error) {
             log('ERROR', 'SMTP Verification Failed', {
                 error: error.message,
-                code: error.code,
-                command: error.command
+                code: error.code
             });
         } else {
-            log('INFO', 'SMTP Server Connected Successfully', { service: 'gmail' });
+            log('INFO', 'SMTP Server Connected Successfully');
         }
     });
 
     return transporter;
 };
 
-// Non-blocking async email - fires and forgets
+// Main email sending logic
 const sendEmailAsync = async (options) => {
-    // console.log("SENDING EMAIL ASYNC OPTIONS", options);
+    const provider = process.env.EMAIL_PROVIDER || (process.env.BREVO_API_KEY ? 'brevo' : 'smtp');
 
+    if (provider === 'brevo' && process.env.BREVO_API_KEY) {
+        try {
+            log('INFO', 'Sending email via Brevo SDK', { to: options.email });
+            const client = SibApiV3Sdk.ApiClient.instance;
+            client.authentications["api-key"].apiKey = process.env.BREVO_API_KEY;
+
+            const api = new SibApiV3Sdk.TransactionalEmailsApi();
+
+            await api.sendTransacEmail({
+                sender: { email: process.env.EMAIL_FROM, name: "Luxury Hotel" },
+                to: [{ email: options.email }],
+                subject: options.subject,
+                htmlContent: options.html || options.message.replace(/\n/g, '<br>')
+            });
+
+            log('INFO', 'Email sent successfully via Brevo');
+            return true;
+        } catch (err) {
+            log('WARNING', 'Brevo email error, falling back to SMTP', { error: err.message });
+            // Fallback to SMTP handled below
+        }
+    }
+
+    // SMTP Sending (Primary or Fallback)
     try {
-        const client = SibApiV3Sdk.ApiClient.instance;
-        client.authentications["api-key"].apiKey = process.env.BREVO_API_KEY;
+        if (!validateEmailConfig()) {
+            throw new Error('Email configuration missing for SMTP');
+        }
 
-        const api = new SibApiV3Sdk.TransactionalEmailsApi();
-
-        const response = await api.sendTransacEmail({
-            sender: { email: process.env.EMAIL_FROM, name: "Luxury Hotel" },
-            to: [{ email: options.email }],
+        const info = await getTransporter().sendMail({
+            from: process.env.EMAIL_FROM || process.env.SMTP_USER || process.env.EMAIL_USER,
+            to: options.email,
             subject: options.subject,
-            htmlContent: options.html || options.message.replace(/\n/g, '<br>')
+            text: options.message,
+            html: options.html || options.message.replace(/\n/g, '<br>')
         });
 
-        console.log("RESPONSE", response)
-
+        log('INFO', 'Email sent successfully via SMTP', {
+            to: options.email,
+            messageId: info.messageId
+        });
         return true;
-    } catch (err) {
-        console.error("Brevo email error:", err?.response?.body || err.message);
-        console.log("Falling back to SMTP/Nodemailer...");
-
-        // Fallback to SMTP
-        try {
-            if (!validateEmailConfig()) {
-                throw new Error('Email configuration missing for SMTP fallback');
-            }
-
-            const info = await getTransporter().sendMail({
-                from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
-                to: options.email,
-                subject: options.subject,
-                text: options.message,
-                html: options.html || options.message.replace(/\n/g, '<br>')
-            });
-
-            log('INFO', 'Email sent successfully (fallback async)', {
-                to: options.email,
-                messageId: info.messageId
-            });
-            return true;
-        } catch (smtpError) {
-            console.error("SMTP fallback error:", smtpError.message);
-            throw new Error('Email sending failed (both providers)');
-        }
+    } catch (smtpError) {
+        log('ERROR', 'Email sending failed', { error: smtpError.message });
+        throw new Error(`Email sending failed: ${smtpError.message}`);
     }
 };
 
