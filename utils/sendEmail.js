@@ -100,7 +100,7 @@ const sendEmailAsync = async (options) => {
             const api = new SibApiV3Sdk.TransactionalEmailsApi();
 
             await api.sendTransacEmail({
-                sender: { email: process.env.EMAIL_FROM, name: "Luxury Hotel" },
+                sender: { email: process.env.EMAIL_FROM || process.env.EMAIL_USER, name: process.env.SENDER_NAME || "Luxury Hotel" },
                 to: [{ email: options.email }],
                 subject: options.subject,
                 htmlContent: options.html || options.message.replace(/\n/g, '<br>')
@@ -142,6 +142,26 @@ const sendEmailAsync = async (options) => {
 // Blocking email - waits for response
 const sendEmailSync = async (options) => {
     try {
+        const provider = process.env.EMAIL_PROVIDER || (process.env.BREVO_API_KEY ? 'brevo' : 'smtp');
+
+        if (provider === 'brevo' && process.env.BREVO_API_KEY) {
+            log('INFO', 'Sending email sync via Brevo SDK', { to: options.email });
+            const client = SibApiV3Sdk.ApiClient.instance;
+            client.authentications["api-key"].apiKey = process.env.BREVO_API_KEY;
+
+            const api = new SibApiV3Sdk.TransactionalEmailsApi();
+
+            const result = await api.sendTransacEmail({
+                sender: { email: process.env.EMAIL_FROM || process.env.EMAIL_USER, name: process.env.SENDER_NAME || "Luxury Hotel" },
+                to: [{ email: options.email }],
+                subject: options.subject,
+                htmlContent: options.html || options.message.replace(/\n/g, '<br>')
+            });
+
+            log('INFO', 'Email sent successfully sync via Brevo');
+            return result;
+        }
+
         if (!validateEmailConfig()) {
             log('ERROR', 'Email not sent - missing credentials', { to: options.email });
             return null;
@@ -155,7 +175,7 @@ const sendEmailSync = async (options) => {
             return null;
         }
 
-        log('INFO', 'Sending email (sync/blocking)', { to: options.email, subject: options.subject });
+        log('INFO', 'Sending email via SMTP (sync/blocking)', { to: options.email, subject: options.subject });
 
         const info = await getTransporter().sendMail({
             from: process.env.EMAIL_FROM || process.env.EMAIL_USER,
@@ -165,7 +185,7 @@ const sendEmailSync = async (options) => {
             html: options.html || options.message.replace(/\n/g, '<br>')
         });
 
-        log('INFO', 'Email sent successfully (sync)', {
+        log('INFO', 'Email sent successfully via SMTP (sync)', {
             to: options.email,
             messageId: info.messageId,
             response: info.response
@@ -176,16 +196,8 @@ const sendEmailSync = async (options) => {
             to: options.email,
             subject: options.subject,
             error: error.message,
-            code: error.code,
-            command: error.command
+            code: error.code
         });
-
-        // For Gmail: common errors
-        if (error.message.includes('Invalid login')) {
-            log('ERROR', 'GMAIL AUTH ERROR - Check EMAIL_PASS (use App Password, not regular password)', {
-                emailUser: process.env.EMAIL_USER.substring(0, 5) + '***'
-            });
-        }
 
         return null;
     }
