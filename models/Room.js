@@ -29,13 +29,13 @@ const RoomSchema = new mongoose.Schema({
             type: Number,
             required: true,
             min: 1,
-            max: 10
+            max: 20
         },
         children: {
             type: Number,
             default: 0,
             min: 0,
-            max: 5
+            max: 10
         }
     },
     bedType: {

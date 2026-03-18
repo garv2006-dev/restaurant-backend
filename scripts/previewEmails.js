@@ -5,7 +5,8 @@ const {
     generateCancellationEmail,
     generateCheckInEmail,
     generateCheckOutEmail,
-    generateOTPEmail
+    generateOTPEmail,
+    generateOfflineBookingEmail
 } = require('../utils/emailTemplates');
 
 const outputDir = path.join(__dirname, 'test-output');
@@ -20,7 +21,7 @@ const mockBooking = {
         totalAdults: 1,
         totalChildren: 0
     },
-    room: { name: 'Royal Executive Suite' },
+    rooms: [{ roomType: { name: 'Royal Executive Suite' }, roomNumberInfo: { number: '101' } }],
     bookingDates: {
         checkInDate: '2026-02-09T14:00:00Z',
         checkOutDate: '2026-02-10T11:00:00Z'
@@ -35,7 +36,12 @@ const templates = [
     { name: 'booking-cancelled.html', content: generateCancellationEmail(mockBooking, 0, 4130.00) },
     { name: 'check-in-confirmed.html', content: generateCheckInEmail(mockBooking) },
     { name: 'thank-you.html', content: generateCheckOutEmail(mockBooking) },
-    { name: 'otp-verification.html', content: generateOTPEmail('123456', 'Garv variya') }
+    { name: 'otp-verification.html', content: generateOTPEmail('123456', 'Garv variya') },
+    { name: 'offline-booking-confirmed.html', content: generateOfflineBookingEmail({
+        ...mockBooking,
+        status: 'Confirmed',
+        rooms: [{ roomType: { name: 'Royal Executive Suite' }, roomNumberInfo: { number: '101' } }]
+    }) }
 ];
 
 templates.forEach(t => {
