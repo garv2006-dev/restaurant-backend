@@ -13,7 +13,8 @@ const {
   generateCancellationEmail,
   generateBookingReceivedEmail,
   generateCheckInEmail,
-  generateCheckOutEmail
+  generateCheckOutEmail,
+  generateOfflineBookingEmail
 } = require("../utils/emailTemplates");
 const {
   emitNewBooking,
@@ -257,7 +258,7 @@ const createBooking = async (req, res) => {
     if (totalAdults + totalChildren > totalMaxCapacity) {
       return res.status(400).json({
         success: false,
-        message: `Total capacity (max ${totalMaxCapacity}) exceeded for selected rooms.`
+        message: `The selected rooms can accommodate a maximum of ${totalMaxCapacity} guests total (including adults and children). Please select more rooms or reduce the guest count.`
       });
     }
 
@@ -1223,8 +1224,9 @@ const createOfflineBooking = async (req, res) => {
   try {
     const {
       customerDetails, // { name, email, phone }
-      roomId, // Legacy support
+      roomId, // Room Type ID
       rooms: inputRooms, // [{ roomId, adults, children }]
+      selectedRoomNumberIds, // Array of specific room number IDs from admin
       checkInDate,
       checkOutDate,
       guestDetails,
@@ -1232,15 +1234,36 @@ const createOfflineBooking = async (req, res) => {
       status = 'Confirmed'
     } = req.body;
 
-    // Normalize rooms - handle either roomId or rooms array
+    // 0. Calculate total guests
+    const totalAdults = Number(guestDetails?.totalAdults || 0);
+    const totalChildren = Number(guestDetails?.totalChildren || 0);
+
+    // 1. Normalize rooms - handle selectedRoomNumberIds, inputRooms, or roomId
     let roomsToBook = [];
-    if (inputRooms && inputRooms.length > 0) {
+    
+    if (selectedRoomNumberIds && selectedRoomNumberIds.length > 0) {
+      // If admin selected specific room numbers, create one room entry for each
+      const roomCount = selectedRoomNumberIds.length;
+      
+      // Distribute guests: basic division with remainder
+      const adultsPerRoom = Math.floor(totalAdults / roomCount);
+      const extraAdults = totalAdults % roomCount;
+      const childrenPerRoom = Math.floor(totalChildren / roomCount);
+      const extraChildren = totalChildren % roomCount;
+
+      roomsToBook = selectedRoomNumberIds.map((srId, index) => ({
+        roomId: roomId, // assuming all selected rooms are of the same type passed in roomId
+        roomNumberId: srId,
+        adults: adultsPerRoom + (index < extraAdults ? 1 : 0),
+        children: childrenPerRoom + (index < extraChildren ? 1 : 0)
+      }));
+    } else if (inputRooms && inputRooms.length > 0) {
       roomsToBook = inputRooms;
     } else if (roomId) {
       roomsToBook = [{
         roomId,
-        adults: guestDetails?.totalAdults || 1,
-        children: guestDetails?.totalChildren || 0
+        adults: totalAdults || 1,
+        children: totalChildren || 0
       }];
     }
 
@@ -1287,14 +1310,25 @@ const createOfflineBooking = async (req, res) => {
         return res.status(404).json({ success: false, message: `Room type ${roomItem.roomId} not found` });
       }
 
-      // Find available room number excluding already selected ones
-      const allTypeRooms = await RoomNumber.find({ roomType: roomItem.roomId, isActive: true });
+      // Use provided room number ID or find available one
       let availableRoomNumber = null;
-      for (const rn of allTypeRooms) {
-        if (!roomNumberDocs.map(d => d._id.toString()).includes(rn._id.toString())) {
-          if (await rn.isAvailableForDates(checkIn, checkOut)) {
-            availableRoomNumber = rn;
-            break;
+      if (roomItem.roomNumberId) {
+        availableRoomNumber = await RoomNumber.findById(roomItem.roomNumberId);
+        if (!availableRoomNumber) {
+          return res.status(404).json({ success: false, message: `Selected room number ${roomItem.roomNumberId} not found` });
+        }
+        // Verify it matches the room type
+        if (availableRoomNumber.roomType.toString() !== room.id.toString()) {
+           return res.status(400).json({ success: false, message: `Room number ${availableRoomNumber.roomNumber} does not belong to type ${room.name}` });
+        }
+      } else {
+        const allTypeRooms = await RoomNumber.find({ roomType: roomItem.roomId, isActive: true });
+        for (const rn of allTypeRooms) {
+          if (!roomNumberDocs.map(d => d._id.toString()).includes(rn._id.toString())) {
+            if (await rn.isAvailableForDates(checkIn, checkOut)) {
+              availableRoomNumber = rn;
+              break;
+            }
           }
         }
       }
@@ -1423,25 +1457,13 @@ const createOfflineBooking = async (req, res) => {
     // 6. Send Confirmation Email
     if (customerDetails.email) {
       try {
-        const message = `
-          Dear ${customerDetails.name},
-
-          Your offline booking has been successfully confirmed.
-
-          Booking ID: ${booking.bookingId}
-          Rooms: ${roomNames.join(', ')}
-          Check-in: ${new Date(checkIn).toLocaleDateString()}
-          Check-out: ${new Date(checkOut).toLocaleDateString()}
-          Total Amount: ₹${totalAmount.toFixed(2)}
-          Payment Status: ${booking.paymentStatus}
-
-          Thank you for staying with us!
-        `;
+        const html = generateOfflineBookingEmail(booking);
 
         await sendEmail({
           email: customerDetails.email,
-          subject: `Booking Confirmed - ${booking.bookingId}`,
-          message
+          subject: `Booking Confirmed - ${booking.bookingId} | Luxury Hotel`,
+          message: `Dear ${customerDetails.name}, your offline booking ${booking.bookingId} has been confirmed.`,
+          html: html
         });
       } catch (emailError) {
         console.error("Failed to send booking confirmation email:", emailError);

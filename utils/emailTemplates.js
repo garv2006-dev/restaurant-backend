@@ -523,6 +523,56 @@ const generatePartialCancellationEmail = (booking, cancelledRoomsCount, activeRo
   });
 };
 
+/**
+ * Offline Booking Confirmation
+ */
+const generateOfflineBookingEmail = (booking) => {
+  const checkInDate = new Date(booking.bookingDates.checkInDate).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+  const checkOutDate = new Date(booking.bookingDates.checkOutDate).toLocaleDateString('en-GB', {
+    day: '2-digit', month: 'short', year: 'numeric'
+  });
+
+  const isCheckedIn = booking.status === 'CheckedIn';
+
+  return masterEmailLayout({
+    title: isCheckedIn ? 'You are now checked in!' : 'Booking Confirmed',
+    customerName: booking.guestDetails.primaryGuest.name,
+    introMessage: isCheckedIn 
+      ? 'Welcome! We are delighted to have you with us. Your room is ready for your arrival.'
+      : 'Your offline booking has been successfully confirmed. We look forward to welcoming you soon.',
+    statusBadge: { 
+      text: isCheckedIn ? '✓ Check-in Confirmed' : '✓ Booking Confirmed', 
+      bg: isCheckedIn ? '#ecfeff' : '#f0fdf4', 
+      color: isCheckedIn ? '#0d9488' : '#16a34a' 
+    },
+    bookingDetails: [
+      { label: 'Booking Reference', value: booking.bookingId },
+      { label: 'Rooms', value: booking.rooms.length > 1 ? `${booking.rooms.length} Rooms` : (booking.rooms[0]?.roomType?.name || 'Executive Room') },
+      { label: 'Allocated Rooms', value: booking.rooms.map(r => r.roomNumberInfo?.number || r.roomNumber).join(', ') },
+      { label: 'Check-in Date', value: checkInDate },
+      { label: 'Check-out Date', value: checkOutDate }
+    ],
+    messageBody: `
+      <div style="margin-top: 32px; padding: 24px; background-color: #f9fafb; border-radius: 8px; text-align: center;">
+        <p style="margin: 0 0 16px 0; font-style: italic; color: #4b5563; font-size: 14px;">
+          "Enjoy your stay with us. If you need anything, please don't hesitate to contact our front desk by dialing 0 from your room telephone."
+        </p>
+      </div>
+      <div style="margin-top: 24px; padding: 16px; background-color: #fff3cd; border-left: 4px solid #fbbf24; border-radius: 4px;">
+        <p style="margin: 0 0 8px 0; font-weight: 600; color: #92400e; font-size: 13px;">
+          Check-out Reminder
+        </p>
+        <p style="margin: 0; font-size: 12px; color: #b45309;">
+          Please check out by <strong>11:00 AM on ${checkOutDate}</strong>. Late check-out is available upon request at the front desk (subject to availability and additional charges).
+        </p>
+      </div>
+    `,
+    actionButton: { text: 'View My Booking', url: `${baseUrl}/bookings` }
+  });
+};
+
 module.exports = {
   generateBookingReceivedEmail,
   generateBookingConfirmationEmail,
@@ -535,5 +585,6 @@ module.exports = {
   generatePaymentConfirmationEmail,
   generateContactFormEmail,
   generateContactConfirmationEmail,
-  generateNoShowEmail
+  generateNoShowEmail,
+  generateOfflineBookingEmail
 };
