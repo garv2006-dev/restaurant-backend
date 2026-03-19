@@ -18,6 +18,8 @@ const { validateRequest } = require('../middleware/validation');
 
 const express = require('express');
 const router = express.Router();
+const { authLimiter, forgotPasswordLimiter } = require('../middleware/rateLimit');
+const { validateEmail } = require('../middleware/emailValidation');
 
 // Register validation rules
 const registerValidation = [
@@ -101,17 +103,17 @@ const resetPasswordValidation = [
 // @desc    Register user
 // @route   POST /api/auth/register
 // @access  Public
-router.post('/register', registerValidation, validateRequest, register);
+router.post('/register', authLimiter, registerValidation, validateRequest, register);
 
 // @desc    Login user
 // @route   POST /api/auth/login
 // @access  Public
-router.post('/login', loginValidation, validateRequest, login);
+router.post('/login', authLimiter, loginValidation, validateRequest, login);
 
 // @desc    Google OAuth login
 // @route   POST /api/auth/google-login
 // @access  Public
-router.post('/google-login', validateRequest, googleLogin);
+router.post('/google-login', authLimiter, validateRequest, googleLogin);
 
 // @desc    Logout user
 // @route   POST /api/auth/logout
@@ -131,7 +133,7 @@ router.put('/updatepassword', protect, updatePasswordValidation, validateRequest
 // @desc    Forgot password
 // @route   POST /api/auth/forgotpassword
 // @access  Public
-router.post('/forgotpassword', forgotPasswordValidation, validateRequest, forgotPassword);
+router.post('/forgotpassword', forgotPasswordLimiter, forgotPasswordValidation, validateRequest, forgotPassword);
 
 // @desc    Verify OTP
 // @route   POST /api/auth/verify-otp
@@ -151,7 +153,7 @@ router.get('/verify/:token', verifyEmail);
 // @desc    Resend email verification
 // @route   POST /api/auth/resend-verification
 // @access  Public
-router.post('/resend-verification', forgotPasswordValidation, validateRequest, resendVerification);
+router.post('/resend-verification', forgotPasswordLimiter, forgotPasswordValidation, validateRequest, resendVerification);
 
 // @desc    Verify account with OTP
 // @route   POST /api/auth/verify-account

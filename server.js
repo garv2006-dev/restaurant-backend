@@ -3,7 +3,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const compression = require('compression');
-const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const hpp = require('hpp');
@@ -15,6 +14,7 @@ const connectDB = require('./config/database');
 const errorHandler = require('./middleware/errorHandler');
 const { initializeSocket } = require('./config/socket');
 const { startAutoCancelScheduler } = require('./utils/autoCancelBookings');
+const { generalLimiter } = require('./middleware/rateLimit');
 
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
@@ -36,6 +36,9 @@ const app = express();
 
 // Connect to MongoDB
 connectDB();
+
+// Trust proxy for rate limiting (important for some deployment platforms)
+app.set('trust proxy', 1);
 
 // Security middleware
 app.use(helmet({
@@ -88,37 +91,8 @@ app.use(hpp({
 // Environment flag
 const isDev = (process.env.NODE_ENV || 'development') === 'development';
 
-// Rate limiting - more specific for auth routes
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: isDev ? 1000 : 100, // relaxed limit: 100 req/15min per IP in production
-    message: {
-        success: false,
-        message: 'Too many authentication attempts, please try again later.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    // Skip applying the limiter entirely in development or when explicitly disabled
-    skip: () => isDev || process.env.DISABLE_AUTH_RATE_LIMIT === 'true'
-});
-
-const generalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    // In development, disable general limiter to avoid blocking local testing
-    max: isDev ? 1000000 : 3000, // production: 3000 req/15min per IP (greatly increased for dashboard usage)
-    message: {
-        success: false,
-        message: 'Too many requests from this IP, please try again later.'
-    },
-    standardHeaders: true,
-    legacyHeaders: false,
-    // Skip applying the limiter entirely in development
-    skip: () => isDev,
-});
-
-// Apply general limiter to all API routes (no-op in development due to skip)
+// Apply general limiter to all API routes
 app.use('/api/', generalLimiter);
-app.use('/api/auth', authLimiter);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));

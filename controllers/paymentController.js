@@ -2,6 +2,7 @@ const Payment = require('../models/Payment');
 const Booking = require('../models/Booking');
 const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
+const emailService = require('../services/emailService');
 const { generatePaymentConfirmationEmail } = require('../utils/emailTemplates');
 
 // @desc    Create payment intent (Stripe/Razorpay)
@@ -172,7 +173,9 @@ const confirmPayment = async (req, res) => {
             amount: amount,
             paymentMethod: paymentDetails.method,
             transactionId: paymentDetails.transactionId,
+            gatewayTransactionId: paymentDetails.transactionId,
             gateway: paymentMethod,
+            paymentGateway: paymentMethod === 'stripe' ? 'Stripe' : (paymentMethod === 'razorpay' ? 'Razorpay' : 'Manual'),
             status: 'Completed'
         });
 
@@ -517,6 +520,7 @@ const createPayment = async (req, res) => {
         // Normalize payment method to handle case variations
         const normalizedPaymentMethod = typeof paymentMethod === 'string' ? paymentMethod.trim() : paymentMethod;
         const isCashPayment = normalizedPaymentMethod === "Cash" || normalizedPaymentMethod === "cash" || normalizedPaymentMethod === "COD";
+        const txnId = `TXN${Date.now()}`;
 
         const paymentData = {
             booking: bookingId,
@@ -524,8 +528,10 @@ const createPayment = async (req, res) => {
             amount: amount || booking.pricing.totalAmount,
             paymentMethod: normalizedPaymentMethod,
             gateway: 'Manual',
+            paymentGateway: 'Manual',
             status: 'Completed',
-            transactionId: `TXN${Date.now()}`
+            transactionId: txnId,
+            gatewayTransactionId: txnId
         };
 
         const payment = await Payment.create(paymentData);
