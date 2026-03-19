@@ -1,5 +1,6 @@
 const { Resend } = require('resend');
 const { 
+  generateBookingReceivedEmail,
   generateBookingConfirmationEmail, 
   generatePasswordResetEmail, 
   generateOTPEmail,
@@ -70,6 +71,20 @@ class EmailService {
     return this.send({
       to,
       subject: `Booking Confirmed #${booking.bookingId} - Luxury Hotel`,
+      html
+    });
+  }
+
+  /**
+   * Send Booking Received Email (Pending)
+   * @param {string} to - Recipient email
+   * @param {Object} booking - Booking details
+   */
+  async sendBookingReceived(to, booking) {
+    const html = generateBookingReceivedEmail(booking);
+    return this.send({
+      to,
+      subject: `Booking Received - ${booking.bookingId}`,
       html
     });
   }
@@ -158,6 +173,10 @@ class EmailService {
     let subject = '';
 
     switch (status) {
+      case 'Pending':
+        html = generateBookingReceivedEmail(booking);
+        subject = `Booking Pending - ${booking.bookingId}`;
+        break;
       case 'Confirmed':
         html = generateBookingConfirmationEmail(booking);
         subject = `Booking Confirmed - ${booking.bookingId}`;
