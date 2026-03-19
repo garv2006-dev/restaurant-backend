@@ -422,9 +422,9 @@ const createBooking = async (req, res) => {
       { path: "rooms.roomType", select: "name type" }
     ]);
 
-    // Send confirmation email
+    // Send initial notification (Booking Received/Pending)
     try {
-      emailService.sendBookingConfirmation(guestDetails.primaryGuest.email, booking)
+      emailService.sendBookingReceived(guestDetails.primaryGuest.email, booking)
         .catch(err => console.error("Email sending error:", err));
     } catch (e) {
       console.error("Email preparation error:", e);

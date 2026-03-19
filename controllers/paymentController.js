@@ -203,17 +203,15 @@ const confirmPayment = async (req, res) => {
             console.error('Socket/Notification error:', socketError);
         }
 
+        // Send confirmations (Payment & Booking)
         try {
-            const htmlMessage = generatePaymentConfirmationEmail(booking, paymentDetails);
-
-            sendEmail({
-                email: booking.guestDetails.primaryGuest.email,
-                subject: `Payment Confirmation - ${booking.bookingId}`,
-                message: `Dear ${booking.guestDetails.primaryGuest.name}, Your payment of ₹${amount} for booking ${booking.bookingId} has been confirmed.`,
-                html: htmlMessage
-            }).catch(err => console.error('Background payment email error:', err));
+            await emailService.sendPaymentConfirmation(booking.guestDetails.primaryGuest.email, booking, paymentDetails);
+            
+            if (booking.status === 'Confirmed') {
+                await emailService.sendBookingConfirmation(booking.guestDetails.primaryGuest.email, booking);
+            }
         } catch (emailError) {
-            console.error('Email preparation error:', emailError);
+            console.error('Unified email sending error:', emailError);
         }
 
         res.status(200).json({
@@ -546,6 +544,16 @@ const createPayment = async (req, res) => {
             paymentDate: new Date()
         };
         await booking.save();
+
+        // Send notifications
+        try {
+            await emailService.sendPaymentConfirmation(booking.guestDetails.primaryGuest.email, booking, booking.paymentDetails);
+            if (booking.status === 'Confirmed') {
+                await emailService.sendBookingConfirmation(booking.guestDetails.primaryGuest.email, booking);
+            }
+        } catch (emailError) {
+            console.error('Email confirmation error:', emailError);
+        }
 
         res.status(201).json({
             success: true,
