@@ -6,6 +6,7 @@ const Review = require('../models/Review');
 const RoomAllocation = require('../models/RoomAllocation');
 const RoomNumber = require('../models/RoomNumber');
 const sendEmail = require('../utils/sendEmail');
+const emailService = require('../services/emailService');
 const {
     generateBookingConfirmationEmail,
     generateCancellationEmail,
@@ -329,46 +330,9 @@ const updateBookingStatus = async (req, res) => {
                 day: 'numeric'
             });
 
-            let emailSubject = '';
-            let emailMessage = '';
-            let htmlHtml = '';
-
-            if (status === 'Confirmed' && oldStatus === 'Pending') {
-                emailSubject = `Booking Confirmed - ${booking.bookingId}`;
-                emailMessage = `Your booking ${booking.bookingId} has been confirmed.`;
-                htmlHtml = generateBookingConfirmationEmail(booking);
-            } else if (status === 'Cancelled') {
-                emailSubject = `Booking Cancelled - ${booking.bookingId}`;
-                emailMessage = `Your booking ${booking.bookingId} has been cancelled.`;
-
-                // Calculate refund based on payment method
-                const paymentMethod = booking.paymentDetails?.method || '';
-                const isCashPayment = paymentMethod.toLowerCase() === 'cash';
-                const cancellationFee = isCashPayment ? booking.pricing.totalAmount : 0;
-                const refundAmount = isCashPayment ? 0 : booking.pricing.totalAmount;
-
-                htmlHtml = generateCancellationEmail(booking, cancellationFee, refundAmount);
-            } else if (status === 'CheckedIn') {
-                emailSubject = `Welcome! Check-in Confirmed - ${booking.bookingId}`;
-                emailMessage = `You are now checked in for booking ${booking.bookingId}.`;
-                htmlHtml = generateCheckInEmail(booking);
-            } else if (status === 'CheckedOut') {
-                emailSubject = `Thank You! Check-out Completed - ${booking.bookingId}`;
-                emailMessage = `You have been checked out for booking ${booking.bookingId}.`;
-                htmlHtml = generateCheckOutEmail(booking);
-            } else if (status === 'NoShow') {
-                emailSubject = `No Show - ${booking.bookingId}`;
-                emailMessage = `Your booking ${booking.bookingId} has been marked as No-Show.`;
-                htmlHtml = generateNoShowEmail(booking);
-            }
-
-            if (htmlHtml && guestEmail) {
-                sendEmail({
-                    email: guestEmail,
-                    subject: emailSubject,
-                    message: emailMessage,
-                    html: htmlHtml
-                }).catch(err => console.error('Background email error:', err));
+            if (guestEmail) {
+                emailService.sendBookingStatusUpdate(guestEmail, booking, status)
+                    .catch(err => console.error('Background email error:', err));
             }
         } catch (emailError) {
             console.error('Email sending error:', emailError);

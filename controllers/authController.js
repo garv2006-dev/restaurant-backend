@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library');
 const sendEmail = require('../utils/sendEmail');
+const emailService = require('../services/emailService');
 const { generatePasswordResetEmail, generateOTPEmail } = require('../utils/emailTemplates');
 const { sendFirstTimeDiscountNotification } = require('../services/firstTimeUserService');
 
@@ -35,12 +36,8 @@ const register = async (req, res, next) => {
                 const htmlMessage = generateOTPEmail(otp, existingUser.name);
 
                 // Send OTP via email (Non-blocking)
-                sendEmail({
-                    email: existingUser.email,
-                    subject: 'Account Verification Code',
-                    message,
-                    html: htmlMessage
-                }).catch(err => console.error('Error sending existing user verification:', err));
+                emailService.sendOTP(existingUser.email, otp, existingUser.name)
+                    .catch(err => console.error('Error sending existing user verification:', err));
 
                 return res.status(200).json({
                     success: true,
@@ -98,12 +95,8 @@ const register = async (req, res, next) => {
         const htmlMessage = generateOTPEmail(otp, user.name);
 
         // Send OTP via email (Non-blocking)
-        sendEmail({
-            email: user.email,
-            subject: 'Account Verification Code',
-            message,
-            html: htmlMessage
-        }).catch(err => console.error('Error sending registration email:', err));
+        emailService.sendOTP(user.email, otp, user.name)
+            .catch(err => console.error('Error sending registration email:', err));
 
         res.status(200).json({
             success: true,
@@ -411,13 +404,8 @@ If you did not request this, please ignore this email.
         const htmlMessage = generateOTPEmail(resetToken, user.name);
 
         try {
-            await sendEmail({
-                email: user.email,
-                subject: 'Password Reset Verification Code',
-                message,
-                html: htmlMessage
-            })
-
+            await emailService.sendOTP(user.email, resetToken, user.name);
+            
             res.status(200).json({
                 success: true,
                 message: 'Verification code sent to email'
@@ -497,12 +485,7 @@ If you did not request this, please contact support immediately.
         const htmlMessage = generatePasswordResetEmail(resetUrl);
 
         try {
-            await sendEmail({
-                email: user.email,
-                subject: 'Reset Password Link',
-                message,
-                html: htmlMessage
-            });
+            await emailService.sendPasswordReset(user.email, resetUrl);
         } catch (emailError) {
             console.error("Failed to send reset link email", emailError);
             // We still return success because OTP is valid, but maybe warn?
@@ -686,12 +669,8 @@ const resendVerification = async (req, res, next) => {
         const htmlMessage = generateOTPEmail(otp, user.name);
 
         // Send (Non-blocking)
-        sendEmail({
-            email: user.email,
-            subject: 'New Verification Code',
-            message,
-            html: htmlMessage
-        }).catch(err => console.error('Error sending resend verification:', err));
+        emailService.sendOTP(user.email, otp, user.name)
+            .catch(err => console.error('Error sending resend verification:', err));
 
         res.status(200).json({
             success: true,

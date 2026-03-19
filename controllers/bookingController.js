@@ -4,6 +4,7 @@ const Room = require("../models/Room");
 const RoomNumber = require("../models/RoomNumber");
 const User = require("../models/User");
 const sendEmail = require("../utils/sendEmail");
+const emailService = require("../services/emailService");
 const Payment = require("../models/Payment");
 const Discount = require("../models/Discount");
 const RoomAllocation = require("../models/RoomAllocation");
@@ -376,15 +377,20 @@ const createBooking = async (req, res) => {
         paymentDetailsObj.upiId = paymentDetails.upiId || null;
       }
 
+      const gatewayType = isRazorpay ? "Razorpay" : "Manual";
+      const txnId = paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`);
+
       payment = await Payment.create({
         booking: booking._id,
         user: req.user.id,
         amount: totalAmount,
         currency: 'INR',
         paymentMethod: normalizedPaymentMethod,
-        gateway: isRazorpay ? "Razorpay" : "Manual",
+        gateway: gatewayType,
+        paymentGateway: gatewayType, // Ensure consistency with schema field
         status: "Completed",
-        transactionId: paymentDetails?.transactionId || (isCashPayment ? `CASH_${booking._id}` : `TXN${Date.now()}`),
+        transactionId: txnId,
+        gatewayTransactionId: txnId, // Provide required field
         paymentDetails: paymentDetailsObj,
         billingAddress: {
           firstName: guestDetails.primaryGuest.name.split(' ')[0] || '',
@@ -418,15 +424,8 @@ const createBooking = async (req, res) => {
 
     // Send confirmation email
     try {
-      const htmlMessage = generateBookingReceivedEmail(booking);
-      const plainTextMessage = `Dear ${guestDetails.primaryGuest.name},\n\nYour booking ${booking.bookingId} for ${roomNames.join(', ')} has been received and is pending confirmation.`;
-
-      sendEmail({
-        email: guestDetails.primaryGuest.email,
-        subject: `⏳ Booking Received - Pending Confirmation - ${booking.bookingId} | Luxury Hotel`,
-        message: plainTextMessage,
-        html: htmlMessage,
-      }).catch(err => console.error("Email sending error:", err));
+      emailService.sendBookingConfirmation(guestDetails.primaryGuest.email, booking)
+        .catch(err => console.error("Email sending error:", err));
     } catch (e) {
       console.error("Email preparation error:", e);
     }

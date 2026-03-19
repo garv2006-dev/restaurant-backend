@@ -1,4 +1,5 @@
 const sendEmail = require('../utils/sendEmail');
+const emailService = require('../services/emailService');
 const { generateContactFormEmail, generateContactConfirmationEmail } = require('../utils/emailTemplates');
 
 // @desc    Send contact form email
@@ -90,22 +91,10 @@ exports.sendContactEmail = async (req, res) => {
 
     // Send emails using the shared utility
     // Send to Admin
-    const adminHtml = generateContactFormEmail({ name, email, phone, subject, message });
-    await sendEmail({
-      email: 'garvvariya03@gmail.com',
-      subject: `New Contact Form Submission: ${subject}`,
-      message: `Name: ${name}\nEmail: ${email}\nPhone: ${phone}\nSubject: ${subject}\nMessage: ${message}`,
-      html: adminHtml
-    });
+    await emailService.sendContactForm({ name, email, phone, subject, message });
 
     // Send to User
-    const userHtml = generateContactConfirmationEmail(name, subject, message);
-    await sendEmail({
-      email: email,
-      subject: 'Thank you for contacting Luxury Hotel',
-      message: `Dear ${name},\n\nThank you for reaching out. We have received your message: "${subject}".\n\nBest,\nLuxury Hotel Team`,
-      html: userHtml
-    });
+    await emailService.sendContactConfirmation(email, name, subject, message);
 
     res.status(200).json({
       success: true,
